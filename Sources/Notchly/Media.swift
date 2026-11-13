@@ -169,7 +169,7 @@ final class MediaController: ObservableObject {
             title = i.title; artist = i.artist; album = i.album
             lyrics = []; lyric = ""
             loadArt(i.art)
-            if P.bool("lyrics") && P.bool("allowNetwork") && !Eco.on { loadLyrics(i) }
+            if P.bool("lyrics") && P.bool("allowNetwork") { loadLyrics(i) }
             if !first && i.playing && P.bool("trackAlerts") {
                 NotchState.shared.post(IslandAlert(symbol: "music.note", tint: tint, title: i.title, detail: i.artist, duration: 2.8))
             }
@@ -196,28 +196,50 @@ final class MediaController: ObservableObject {
     }
 
     private func loadLyrics(_ i: Info) {
-        var comps = URLComponents(string: "https://lrclib.net/api/get")!
-        comps.queryItems = [URLQueryItem(name: "artist_name", value: i.artist), URLQueryItem(name: "track_name", value: i.title),
-                            URLQueryItem(name: "album_name", value: i.album)]
-        guard let u = comps.url else { return }
         let key = trackKey
-        URLSession.shared.dataTask(with: u) { [weak self] d, _, _ in
-            guard let d = d,
-                  let j = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let s = j["syncedLyrics"] as? String else { return }
-            var out: [(Double, String)] = []
-            for line in s.components(separatedBy: "\n") {
-                guard line.hasPrefix("["), let close = line.firstIndex(of: "]") else { continue }
-                let stamp = String(line[line.index(after: line.startIndex)..<close])
-                let parts = stamp.components(separatedBy: ":")
-                guard parts.count == 2, let m = Double(parts[0]), let sec = Double(parts[1]) else { continue }
-                let text = String(line[line.index(after: close)...]).trimmingCharacters(in: .whitespaces)
-                out.append((m * 60 + sec, text))
+        let clean = i.title.replacingOccurrences(of: "\\(.*?\\)|\\[.*?\\]", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespaces)
+        let firstArtist = (i.artist.components(separatedBy: CharacterSet(charactersIn: ",&;")).first ?? i.artist)
+            .trimmingCharacters(in: .whitespaces)
+        let tries: [[URLQueryItem]] = [
+            [URLQueryItem(name: "track_name", value: i.title), URLQueryItem(name: "artist_name", value: i.artist)],
+            [URLQueryItem(name: "track_name", value: clean), URLQueryItem(name: "artist_name", value: firstArtist)],
+            [URLQueryItem(name: "q", value: clean + " " + firstArtist)],
+        ]
+        attemptLyrics(tries, 0, key, i.dur)
+    }
+
+    private func attemptLyrics(_ tries: [[URLQueryItem]], _ n: Int, _ key: String, _ dur: Double) {
+        guard n < tries.count, var c = URLComponents(string: "https://lrclib.net/api/search") else { return }
+        c.queryItems = tries[n]
+        guard let u = c.url else { return }
+        var req = URLRequest(url: u)
+        req.timeoutInterval = 10
+        URLSession.shared.dataTask(with: req) { [weak self] d, _, _ in
+            var best: [(Double, String)] = []
+            if let d = d, let arr = (try? JSONSerialization.jsonObject(with: d)) as? [[String: Any]] {
+                let cands = arr.filter { (($0["syncedLyrics"] as? String) ?? "").isEmpty == false }
+                let pick = cands.min { abs(($0["duration"] as? Double ?? 0) - dur) < abs(($1["duration"] as? Double ?? 0) - dur) }
+                if let s = pick?["syncedLyrics"] as? String { best = MediaController.parseLRC(s) }
             }
             DispatchQueue.main.async {
-                if let self = self, self.trackKey == key { self.lyrics = out }
+                guard let self = self, self.trackKey == key else { return }
+                if best.isEmpty { self.attemptLyrics(tries, n + 1, key, dur) } else { self.lyrics = best }
             }
         }.resume()
+    }
+
+    static func parseLRC(_ s: String) -> [(Double, String)] {
+        var out: [(Double, String)] = []
+        for line in s.components(separatedBy: "\n") {
+            guard line.hasPrefix("["), let close = line.firstIndex(of: "]") else { continue }
+            let stamp = String(line[line.index(after: line.startIndex)..<close])
+            let parts = stamp.components(separatedBy: ":")
+            guard parts.count == 2, let m = Double(parts[0]), let sec = Double(parts[1]) else { continue }
+            let text = String(line[line.index(after: close)...]).trimmingCharacters(in: .whitespaces)
+            out.append((m * 60 + sec, text))
+        }
+        return out
     }
 
     // MARK: Controls
