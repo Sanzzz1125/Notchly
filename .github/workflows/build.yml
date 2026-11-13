@@ -1,0 +1,11 @@
+name: build
+on: [push, pull_request]
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build -c release
+      - name: Compile media bridge
+        run: clang -dynamiclib -fobjc-arc -framework Foundation -o /tmp/libNotchlyMedia.dylib bridge/MediaBridge.m
