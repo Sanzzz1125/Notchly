@@ -87,8 +87,10 @@ struct MediaCard: View {
         let frac = m.duration > 0 ? (drag.v ?? m.position / m.duration) : 0
         return VStack(alignment: .leading, spacing: 4) {
             Text(m.title).font(.system(size: 15, weight: .bold)).lineLimit(1)
-            Text(m.artist).font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.6)).lineLimit(1)
-            if !m.lyric.isEmpty && !compact {
+            if !(compact && !m.lyric.isEmpty) {
+                Text(m.artist).font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.6)).lineLimit(1)
+            }
+            if !m.lyric.isEmpty {
                 Text(m.lyric).font(.system(size: 11, weight: .medium)).foregroundStyle(m.tint).lineLimit(1)
                     .transition(.opacity)
             }
