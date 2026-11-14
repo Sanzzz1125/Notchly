@@ -74,6 +74,7 @@ final class NotchState: ObservableObject {
     @Published var hasNotch = false
     @Published var pinned = false
     @Published var forward = true
+    var blockSwipe = false
     func move(_ a: NotchTab, before b: NotchTab) {
         var o = NotchTab.ordered
         guard a != b, let i = o.firstIndex(of: a), let ti = o.firstIndex(of: b) else { return }
@@ -88,6 +89,7 @@ final class NotchState: ObservableObject {
         let all = NotchTab.enabled
         let a = all.firstIndex(of: tab) ?? 0, b = all.firstIndex(of: t) ?? 0
         forward = b >= a
+        blockSwipe = false
         withAnimation(Motion.tab) { tab = t }
     }
     private var alertWork: DispatchWorkItem?
@@ -104,6 +106,7 @@ final class NotchState: ObservableObject {
     func close() {
         guard expanded else { return }
         pinned = false
+        blockSwipe = false
         withAnimation(Motion.close) { expanded = false }
     }
     func toggle() { expanded ? close() : open(NotchTab(rawValue: P.str("defaultTab"))) }

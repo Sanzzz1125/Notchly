@@ -470,54 +470,6 @@ struct DropZone: View {
     }
 }
 
-struct TrayTab: View {
-    @ObservedObject var tray = TrayStore.shared
-    var body: some View {
-        HStack(spacing: 10) {
-            VStack(spacing: 8) {
-                DropZone(symbol: "tray.and.arrow.down.fill", title: "Drop to hold") { tray.add($0) }
-                DropZone(symbol: "airplayaudio", title: "AirDrop") { urls in
-                    NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
-                }
-            }
-            .frame(width: 130)
-            ZStack {
-                if tray.files.isEmpty {
-                    Empty(symbol: "square.stack.3d.up", text: "Files you drop stay here — drag them out anywhere")
-                } else {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(tray.files, id: \.self) { u in
-                                VStack(spacing: 4) {
-                                    Image(nsImage: NSWorkspace.shared.icon(forFile: u.path)).resizable().frame(width: 48, height: 48)
-                                    Text(u.lastPathComponent).font(.system(size: 10)).lineLimit(2).multilineTextAlignment(.center)
-                                        .frame(width: 70)
-                                }
-                                .padding(8).card(12)
-                                .onDrag { NSItemProvider(object: u as NSURL) }
-                                .contextMenu {
-                                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([u]) }
-                                    Button("AirDrop") { NSSharingService(named: .sendViaAirDrop)?.perform(withItems: [u]) }
-                                    Button("Remove") { tray.remove(u) }
-                                }
-                            }
-                        }
-                        .padding(8)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .card()
-            .overlay(alignment: .topTrailing) {
-                if !tray.files.isEmpty {
-                    Button { tray.clear() } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(Color.white.opacity(0.5)) }
-                        .buttonStyle(.plain).padding(6)
-                }
-            }
-        }
-    }
-}
-
 // MARK: Apps
 struct AppsTab: View {
     @AppStorage("launchApps") var raw = ""

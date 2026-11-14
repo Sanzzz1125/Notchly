@@ -185,11 +185,23 @@ final class ClipboardStore: ObservableObject {
 final class TrayStore: ObservableObject {
     static let shared = TrayStore()
     @Published var files: [URL] = []
+    @Published var selected = Set<URL>()
+    var selectedFiles: [URL] { files.filter { selected.contains($0) } }
     func add(_ urls: [URL]) {
         for u in urls where !files.contains(u) { files.append(u) }
     }
-    func remove(_ u: URL) { files.removeAll { $0 == u } }
-    func clear() { files = [] }
+    func toggle(_ u: URL) {
+        if selected.contains(u) { selected.remove(u) } else { selected.insert(u) }
+    }
+    func selectAll() { selected = Set(files) }
+    func deselect() { selected = [] }
+    func remove(_ list: [URL]) {
+        let s = Set(list)
+        files.removeAll { s.contains($0) }
+        selected.subtract(s)
+    }
+    func remove(_ u: URL) { remove([u]) }
+    func clear() { files = []; selected = [] }
 }
 
 func loadFileURLs(_ providers: [NSItemProvider], _ done: @escaping ([URL]) -> Void) {

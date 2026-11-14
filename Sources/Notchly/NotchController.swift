@@ -177,7 +177,7 @@ final class NotchController {
     private var didSwitch = false
 
     private func scroll(_ ev: NSEvent) {
-        guard state.expanded, P.bool("gestures") else { return }
+        guard state.expanded, P.bool("gestures"), !state.blockSwipe else { return }
         // Scrolling over the top bar (icon strip) must only scroll the strip, not change pages.
         if ev.window === panel && ev.locationInWindow.y > panel.frame.height - state.notchSize.height - 6 { return }
         if ev.phase.contains(.began) || ev.phase.contains(.mayBegin) { scrollAccum = 0; didSwitch = false }

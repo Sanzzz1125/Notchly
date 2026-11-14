@@ -12,7 +12,7 @@ enum P {
         "earWidth": 46.0, "panelWidth": 660.0, "bodyHeight": 180.0, "motion": 0,
         "openMode": 0, "openDelay": 0.15, "closeDelay": 0.35, "collapseOnExit": true,
         "haptics": true, "hotkey": true, "gestures": true, "display": 0,
-        "mediaWings": true, "ecoMode": false, "ecoOnBattery": true, "allowNetwork": true, "srcMusic": true, "srcBrowsers": true, "srcVideo": true, "srcOther": true, "trackAlerts": true, "lyrics": true,
+        "mediaWings": true, "trayRemove": true, "ecoMode": false, "ecoOnBattery": true, "allowNetwork": true, "srcMusic": true, "srcBrowsers": true, "srcVideo": true, "srcOther": true, "trackAlerts": true, "lyrics": true,
         "chargingAlerts": true, "lowBatteryAlerts": true, "levelAlerts": true,
         "downloadAlerts": false, "calendarAlerts": true, "awakeIndicator": true,
         "homeSide": "calendar", "defaultTab": "home", "showMenuIcon": true,
