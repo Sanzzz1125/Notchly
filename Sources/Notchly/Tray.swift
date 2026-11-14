@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 /// AppKit tile overlay: click = select/unselect, drag = drag all selected files out (multi-file).
 final class TileView: NSView, NSDraggingSource {
