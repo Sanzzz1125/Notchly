@@ -421,6 +421,7 @@ struct AboutPane: View {
                     Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 96, height: 96)
                     Text("Notchly").font(.title.bold())
                     Text("A dynamic island for your MacBook notch.").foregroundStyle(.secondary)
+                    Button("Show welcome tour") { Onboarding.show() }
                     Button("Test alert") {
                         NotchState.shared.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Hello", detail: "Notchly is alive"))
                     }

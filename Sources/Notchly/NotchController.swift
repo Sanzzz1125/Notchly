@@ -126,6 +126,11 @@ final class NotchController {
         var tok: Int32 = 0
         notify_register_dispatch("notchly.debug.close", &tok, DispatchQueue.main) { [weak self] _ in self?.state.close() }
         debugTokens.append(tok)
+        for n in 0...3 {
+            var t: Int32 = 0
+            notify_register_dispatch("notchly.debug.onboard.\(n)", &t, DispatchQueue.main) { _ in Onboarding.debugRebuild = true; Onboarding.show(page: n) }
+            debugTokens.append(t)
+        }
         var tp: Int32 = 0
         notify_register_dispatch("notchly.debug.pause", &tp, DispatchQueue.main) { [weak self] _ in self?.setPaused(true) }
         debugTokens.append(tp)

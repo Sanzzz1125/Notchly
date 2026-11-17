@@ -20,14 +20,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.item?.isVisible = P.bool("showMenuIcon")
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-            NotchState.shared.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Notchly", detail: "Hover the notch to open", duration: 2.2))
+        if !P.bool("onboarded") && !Demo.on {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Onboarding.show() }
+        } else if !Demo.on {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                NotchState.shared.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Notchly", detail: "Hover the notch to open", duration: 2.2))
+            }
         }
     }
 
     private func buildMenu() {
         let it = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        it.button?.image = NSImage(systemSymbolName: "rectangle.topthird.inset.filled", accessibilityDescription: "Notchly")
+        it.button?.image = Brand.menuBarIcon()
         let m = NSMenu()
         m.addItem(withTitle: "Open / Close  (⌥ Space)", action: #selector(toggle), keyEquivalent: "").target = self
         let pz = m.addItem(withTitle: "Pause Notchly (save battery)", action: #selector(pause), keyEquivalent: "")
@@ -36,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         m.addItem(withTitle: "Keep Mac Awake", action: #selector(awake), keyEquivalent: "").target = self
         m.addItem(.separator())
         m.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
+        m.addItem(withTitle: "Welcome Tour…", action: #selector(tour), keyEquivalent: "").target = self
         m.addItem(.separator())
         m.addItem(withTitle: "Quit Notchly", action: #selector(quit), keyEquivalent: "q").target = self
         it.menu = m
@@ -52,5 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     @objc private func awake() { KeepAwake.shared.toggle() }
     @objc private func settings() { SettingsWindow.show() }
+    @objc private func tour() { Onboarding.show() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
