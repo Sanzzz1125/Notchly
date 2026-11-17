@@ -1,5 +1,5 @@
 #!/bin/bash
-# Builds Notchly.app into ./build and launches it.
+# Builds Notchly.app into ./build and launches it (set NOTCHLY_NO_LAUNCH=1 to skip launching).
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,4 +36,4 @@ fi
 
 codesign --force --sign - "$APP"
 echo "Built $APP"
-open "$APP"
+[ "${NOTCHLY_NO_LAUNCH:-}" = "1" ] || open "$APP"

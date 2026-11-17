@@ -3,25 +3,40 @@
 Notchly runs **entirely on your Mac**. There is no server, no account, no analytics, no crash reporting and no telemetry.
 
 ## Network
-The only outgoing requests are optional and can be switched off in **Settings → Privacy → Allow internet access**:
+Every outgoing request is optional. **Settings → Privacy → Allow internet access** switches all of them off at once.
 
-| Request | Why | Data sent |
-|---|---|---|
-| `https://lrclib.net/api/get` | Synced lyrics | Track title, artist, album |
-| Spotify artwork URL | Album art for the player | Standard image request |
+| Request | Why | Data sent | Default |
+|---|---|---|---|
+| `https://lrclib.net/api/search` | Synced lyrics | Track title, artist | On |
+| Spotify artwork URL | Album art for the player | A standard image request to the URL Spotify gives | On |
+| `https://geocoding-api.open-meteo.com` | Find your city's coordinates (Weather) | The city name you typed, once | **Off** |
+| `https://api.open-meteo.com` | Forecast (Weather) | Those coordinates | **Off** |
 
-Everything else is local. You can verify this yourself: `grep -rn "URLSession" Sources/` lists every network call.
+Weather needs its own opt-in (Settings → Privacy → *Show weather*) in addition to the master switch. Open-Meteo needs no account or API key, and Notchly never reads your system location.
+
+Everything else is local. Verify it yourself: `grep -rn "URLSession" Sources/` lists every network call.
 
 ## Permissions (all optional, all revocable in System Settings → Privacy & Security)
+Notchly does not ask for any of these at launch. The welcome tour and each tab explain the permission and ask only when you press **Allow**.
+
 | Permission | Used for | Stored? |
 |---|---|---|
-| Calendars / Reminders | Show events and to-dos in the notch | No – read live from macOS |
-| Camera | Mirror tab only, while it is open | No – never recorded or saved |
-| Automation (Spotify / Music) | Fallback now-playing and play/pause | No |
-| Downloads folder | Notice a finished download (off by default) | No – file names only shown in an alert |
+| Calendars / Reminders | Show events and to-dos in the notch | No. Read live from macOS |
+| Camera | Mirror tab only, while it is open | No. Never recorded or saved |
+| Automation: Spotify / Music | Fallback now-playing and play/pause | No |
+| Automation: System Events | Only if you press the Dark Mode or Mute tiles | No |
+| Downloads folder | Notice a finished download (off by default) | No. File names only shown in an alert |
+
+Notchly never needs Accessibility, Full Disk Access or Screen Recording.
 
 ## Data on disk
-Only your settings (UserDefaults), your Notes text and your app-launcher list. **Clipboard history and the file Tray are kept in memory only** and disappear when you quit.
+- Settings (UserDefaults), your Notes, your app-launcher list and your custom shortcuts.
+- **Pinned clipboard snippets** (only the ones you pin; unpin to remove).
+- **Everything else in the clipboard history, and the file Tray, is kept in memory only** and disappears when you quit.
+- Clipboard items that password managers mark as concealed or transient are ignored.
 
 ## Now Playing
 System-wide "Now Playing" is read through Apple's private MediaRemote framework (title, artist, artwork). This data stays in the app.
+
+## Custom shortcuts
+Shortcuts you create (apps, websites, Shortcuts-app automations, shell commands) run only when you press them and with your own permissions.

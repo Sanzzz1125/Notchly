@@ -167,10 +167,9 @@ struct TrayTab: View {
                                     Chip(title: "Remove", symbol: "minus.circle") { tray.remove(tray.selectedFiles) }
                                 }
                                 Chip(title: "Clear", symbol: "trash") { tray.clear() }
-                                Toggle("Remove after drop", isOn: $removeAfter)
+                                Toggle("Auto-remove", isOn: $removeAfter)
                                     .toggleStyle(.checkbox).font(DS.Typo.caption)
-                                Text(tray.selected.isEmpty ? "Click to select · drag to move" : "\(tray.selected.count) selected · drag to move")
-                                    .font(DS.Typo.caption).foregroundStyle(DS.Ink.tertiary)
+                                    .help("Remove files from the tray after you drag them out")
                             }
                         }
                         .frame(height: 24)

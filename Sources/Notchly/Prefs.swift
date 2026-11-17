@@ -23,7 +23,16 @@ enum P {
         "tab_controls": true, "tab_weather": false, "weatherEnabled": false, "weatherCity": "", "weatherUnit": 0,
         "focusShortcut": "", "onboarded": false, "demoMode": false, "debugHooks": false,
     ]
-    static func register() { UserDefaults.standard.register(defaults: defaults) }
+    static func register() {
+        UserDefaults.standard.register(defaults: defaults)
+        // `-factoryDefaults YES` (launch argument, in-memory only): ignore every saved preference.
+        // Used by scripts/screenshots.sh so docs never show personal settings.
+        if CommandLine.arguments.contains("-factoryDefaults") {
+            var args = UserDefaults.standard.volatileDomain(forName: UserDefaults.argumentDomain)
+            for (k, v) in defaults where args[k] == nil { args[k] = v }
+            UserDefaults.standard.setVolatileDomain(args, forName: UserDefaults.argumentDomain)
+        }
+    }
     static func bool(_ k: String) -> Bool { UserDefaults.standard.bool(forKey: k) }
     static func dbl(_ k: String) -> Double { UserDefaults.standard.double(forKey: k) }
     static func int(_ k: String) -> Int { UserDefaults.standard.integer(forKey: k) }

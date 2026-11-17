@@ -195,7 +195,7 @@ final class MediaController: ObservableObject {
             title = i.title; artist = i.artist; album = i.album
             lyrics = []; lyric = ""
             loadArt(i.art)
-            if P.bool("lyrics") && P.bool("allowNetwork") { loadLyrics(i) }
+            if P.bool("lyrics") && P.bool("allowNetwork") && !Eco.on { loadLyrics(i) }
             if !first && i.playing && P.bool("trackAlerts") {
                 NotchState.shared.post(IslandAlert(symbol: "music.note", tint: tint, title: i.title, detail: i.artist, duration: 2.8))
             }

@@ -15,7 +15,7 @@ enum SettingsWindow {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
                              backing: .buffered, defer: false)
-            w.title = "Notchly"
+            w.title = "Notchly Settings"
             w.titlebarAppearsTransparent = true
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView())
@@ -448,7 +448,7 @@ struct PowerPane: View {
             Section("Battery saver") {
                 Toggle("Always use battery saver", isOn: $eco)
                 Toggle("Turn on automatically when unplugged", isOn: $ecoBat)
-                Text("Battery saver checks the pointer 10× per second instead of 20–30×, slows clipboard / volume / media checks, freezes the equalizer animation and skips lyric downloads.")
+                Text("Battery saver slows clipboard and media checks, uses calm animations, slows the equalizer and skips lyric downloads. (Notchly already does no polling while the notch is closed.)")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

@@ -9,3 +9,9 @@ jobs:
         run: swift build -c release
       - name: Compile media bridge
         run: clang -dynamiclib -fobjc-arc -framework Foundation -o /tmp/libNotchlyMedia.dylib bridge/MediaBridge.m
+      - name: Package the app
+        run: ./scripts/package.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Notchly
+          path: dist/*.zip
