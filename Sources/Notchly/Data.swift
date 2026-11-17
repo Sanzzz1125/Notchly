@@ -74,7 +74,12 @@ final class CalendarService: ObservableObject {
     }
     private func filter() {
         let cal = Calendar.current
-        events = week.filter { cal.isDate($0.start, inSameDayAs: day) || ($0.start < day && $0.end > cal.startOfDay(for: day) && !cal.isDate($0.end, inSameDayAs: cal.startOfDay(for: day))) }
+        let dayStart: Date = cal.startOfDay(for: day)
+        events = week.filter { (e: CalEvent) -> Bool in
+            if cal.isDate(e.start, inSameDayAs: day) { return true }
+            // multi-day event spanning into the selected day
+            return e.start < dayStart && e.end > dayStart
+        }
         let now = Date()
         upcomingList = week.filter { $0.end > now }
         busyDays = Set(week.map { cal.startOfDay(for: $0.start) })
@@ -582,7 +587,12 @@ final class WeatherService: ObservableObject {
     /// Fetches at most every 30 minutes, and only when something asks for it (panel opened).
     func refreshIfNeeded(force: Bool = false) {
         if Demo.on {
-            let h = (0..<6).map { (Date().addingTimeInterval(Double($0) * 3600), 19.0 + Double($0) * 0.6, $0 < 3 ? 1 : 0) }
+            var h: [(Date, Double, Int)] = []
+            for i in 0..<6 {
+                let when: Date = Date().addingTimeInterval(Double(i) * 3600)
+                let temp: Double = 19.0 + Double(i) * 0.6
+                h.append((when, temp, i < 3 ? 1 : 0))
+            }
             now = WeatherNow(temp: fahrenheit ? 70 : 21, code: 1, hi: fahrenheit ? 75 : 24, lo: fahrenheit ? 57 : 14, city: "Cupertino", hourly: h)
             return
         }
