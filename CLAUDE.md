@@ -24,6 +24,9 @@ macOS 14+ SwiftUI/AppKit notch "dynamic island" app. Swift package, built into a
 - Idle CPU must stay ~0%: no repeating timers while closed. Prefer notifications/listeners; any timer needs `tolerance` and must respect `Background.paused` and `Eco.on`.
 - Services must not trigger permission prompts at launch; ask from onboarding or an Allow button.
 - Only `@StateObject` + `Box<T>` for view state (no `@State`, `@Observable`, `#Preview`).
+- Settings sliders that change the island must call `NotchState.preview(.layout/.ears/.motion)` so the effect is visible immediately.
+- Motion: use `Motion.open/close/alert/tab` and `Motion.tabTransition`; never hard-code springs. User's chosen style must not be overridden by Eco (only the opt-in `ecoCalmMotion`).
+- No nested scroll views in Settings panes (a fixed-height `List` inside a `Form` traps the scroll wheel).
 - Never publish a second, fast-changing value from `MediaController`; put per-second data in `PlaybackClock`.
 
 ## Testing the UI without touching your settings

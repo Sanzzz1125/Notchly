@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import ServiceManagement
+import UniformTypeIdentifiers
 
 final class SettingsNav: ObservableObject {
     static let shared = SettingsNav()
@@ -13,10 +14,9 @@ enum SettingsWindow {
         if let p = pane { SettingsNav.shared.pane = p }
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
-                             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+                             styleMask: [.titled, .closable, .miniaturizable, .resizable],
                              backing: .buffered, defer: false)
             w.title = "Notchly Settings"
-            w.titlebarAppearsTransparent = true
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView())
             w.center()
@@ -157,6 +157,9 @@ struct AppearancePane: View {
     @AppStorage("panelWidth") var panelWidth = 640.0
     @AppStorage("bodyHeight") var bodyHeight = 170.0
     @AppStorage("motion") var motion = 0
+    @AppStorage("motionSpeed") var motionSpeed = 1.0
+    @AppStorage("motionBounce") var motionBounce = 0.5
+    @AppStorage("tabTransition") var tabTransition = 0
     var body: some View {
         Form {
             Section("Style") {
@@ -190,19 +193,45 @@ struct AppearancePane: View {
                     }
                 }
             }
-            Section("Size & shape") {
+            Section("Size & shape  (the notch opens to preview changes)") {
                 SliderRow(title: "Panel width", value: $panelWidth, range: 420...900, step: 10, unit: " pt")
                 SliderRow(title: "Panel height", value: $bodyHeight, range: 120...280, step: 10, unit: " pt")
                 SliderRow(title: "Corner radius", value: $cornerRadius, range: 12...44, step: 1, unit: " pt")
                 SliderRow(title: "Side ears (live activity)", value: $earWidth, range: 30...80, step: 1, unit: " pt")
+                Text("Ears are the wings beside the notch while music plays, a timer runs or Keep Awake is on. Moving the ear slider shows sample ears.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Motion") {
-                Picker("Animation", selection: $motion) {
-                    Text("Springy").tag(0)
-                    Text("Calm").tag(1)
+                Picker("Animation style", selection: $motion) {
+                    ForEach(MotionStyle.allCases) { Text($0.title).tag($0.rawValue) }
+                }
+                Text((MotionStyle(rawValue: motion) ?? .springy).blurb).font(.caption).foregroundStyle(.secondary)
+                SliderRow(title: "Speed", value: $motionSpeed, range: 0.5...2, step: 0.1, unit: "×")
+                SliderRow(title: "Bounce", value: $motionBounce, range: 0...1, step: 0.05)
+                Picker("Tab switch", selection: $tabTransition) {
+                    ForEach(TabTransitionStyle.allCases) { Text($0.title).tag($0.rawValue) }
                 }.pickerStyle(.segmented)
+                HStack {
+                    Button("Preview motion") { NotchState.shared.preview(.motion) }
+                    Button("Reset motion") { motion = 0; motionSpeed = 1; motionBounce = 0.5; tabTransition = 0 }
+                    Spacer()
+                }
+                Text("Speed and bounce apply to opening, closing, alerts and tab changes. Your choice is always used, even in battery saver (unless you turn on calm motion under Settings → Battery).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
+        .onChange(of: theme) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: cardStyle) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: accentHex) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: glassTint) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: panelWidth) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: bodyHeight) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: cornerRadius) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: earWidth) { _, _ in NotchState.shared.preview(.ears) }
+        .onChange(of: motion) { _, _ in NotchState.shared.preview(.motion) }
+        .onChange(of: motionSpeed) { _, _ in NotchState.shared.preview(.motion) }
+        .onChange(of: motionBounce) { _, _ in NotchState.shared.preview(.motion) }
+        .onChange(of: tabTransition) { _, _ in NotchState.shared.preview(.motion) }
     }
 }
 
@@ -243,33 +272,49 @@ struct TabsPane: View {
     @StateObject private var order = Box<[NotchTab]>(NotchTab.ordered)
     @AppStorage("clipLimit") var clipLimit = 25.0
     @AppStorage("remindersAll") var remindersAll = false
+    private func shift(_ i: Int, _ d: Int) {
+        var o = order.v
+        let j = i + d
+        guard o.indices.contains(i), o.indices.contains(j) else { return }
+        o.swapAt(i, j)
+        withAnimation(Motion.tab) { order.v = o }
+        NotchTab.saveOrder(o)
+    }
     var body: some View {
         Form {
-            Section("Tabs — drag to reorder, switch off what you don't use (you can also drag icons in the notch)") {
-                List {
-                    ForEach(order.v) { t in
-                        HStack(spacing: 10) {
-                            Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
-                            Image(systemName: t.symbol).frame(width: 20)
-                            VStack(alignment: .leading, spacing: 0) {
-                                Text(t.title)
-                                Text(t.blurb).font(.caption).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                            if t != .home {
-                                Toggle("", isOn: Binding(get: { t.isOn }, set: { UserDefaults.standard.set($0, forKey: "tab_\(t.rawValue)"); order.v = order.v }))
-                                    .labelsHidden().toggleStyle(.switch)
-                            }
+            Section("Tabs: reorder with the arrows or by dragging, and switch off what you don't use") {
+                ForEach(Array(order.v.enumerated()), id: \.element) { idx, t in
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
+                        Image(systemName: t.symbol).frame(width: 20)
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(t.title)
+                            Text(t.blurb).font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button { shift(idx, -1) } label: { Image(systemName: "chevron.up") }
+                            .buttonStyle(.borderless).disabled(idx == 0).help("Move up")
+                        Button { shift(idx, 1) } label: { Image(systemName: "chevron.down") }
+                            .buttonStyle(.borderless).disabled(idx == order.v.count - 1).help("Move down")
+                        if t != .home {
+                            Toggle("", isOn: Binding(get: { t.isOn }, set: { UserDefaults.standard.set($0, forKey: "tab_\(t.rawValue)"); order.v = order.v }))
+                                .labelsHidden().toggleStyle(.switch)
+                        } else {
+                            Text("Always on").font(.caption).foregroundStyle(.secondary)
                         }
                     }
-                    .onMove { from, to in
-                        var o = order.v
-                        o.move(fromOffsets: from, toOffset: to)
-                        order.v = o
-                        NotchTab.saveOrder(o)
+                    .contentShape(Rectangle())
+                    .onDrag { NSItemProvider(object: t.rawValue as NSString) }
+                    .onDrop(of: [UTType.plainText], isTargeted: nil) { providers in
+                        guard let p = providers.first else { return false }
+                        _ = p.loadObject(ofClass: NSString.self) { obj, _ in
+                            if let ns = obj as? NSString, let from = NotchTab(rawValue: ns as String) {
+                                DispatchQueue.main.async { NotchState.shared.move(from, before: t); order.v = NotchTab.ordered }
+                            }
+                        }
+                        return true
                     }
                 }
-                .frame(height: 380)
             }
             Section("Home") {
                 Picker("Widget beside the player", selection: $homeSide) {
@@ -279,13 +324,17 @@ struct TabsPane: View {
                     Text("Weather").tag("weather")
                     Text("None").tag("none")
                 }
-                SliderRow(title: "Widget width", value: $sideWidth, range: 150...300, step: 10, unit: " pt")
+                SliderRow(title: "Widget width", value: $sideWidth, range: 150...400, step: 10, unit: " pt")
+                Text("The player always keeps room, so a very wide widget needs a wider panel (Appearance → Size & shape).")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Data") {
                 SliderRow(title: "Clipboard items kept", value: $clipLimit, range: 5...100, step: 5)
                 Toggle("Show all open reminders (not just today)", isOn: $remindersAll)
             }
         }
+        .onChange(of: homeSide) { _, _ in NotchState.shared.preview(.layout) }
+        .onChange(of: sideWidth) { _, _ in NotchState.shared.preview(.layout) }
     }
 }
 
@@ -435,6 +484,7 @@ struct AboutPane: View {
 struct PowerPane: View {
     @AppStorage("ecoMode") var eco = false
     @AppStorage("ecoOnBattery") var ecoBat = true
+    @AppStorage("ecoCalmMotion") var ecoCalm = false
     @StateObject private var paused = Box<Bool>(Background.paused)
     var body: some View {
         Form {
@@ -448,7 +498,8 @@ struct PowerPane: View {
             Section("Battery saver") {
                 Toggle("Always use battery saver", isOn: $eco)
                 Toggle("Turn on automatically when unplugged", isOn: $ecoBat)
-                Text("Battery saver slows clipboard and media checks, uses calm animations, slows the equalizer and skips lyric downloads. (Notchly already does no polling while the notch is closed.)")
+                Toggle("Also use calm, smooth animations in battery saver", isOn: $ecoCalm)
+                Text("Battery saver slows clipboard and media checks, slows the equalizer and skips lyric downloads. Animations only change if you tick the option above. (Notchly already does no polling while the notch is closed.)")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }

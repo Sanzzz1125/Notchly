@@ -131,6 +131,11 @@ final class NotchController {
             notify_register_dispatch("notchly.debug.onboard.\(n)", &t, DispatchQueue.main) { _ in Onboarding.debugRebuild = true; Onboarding.show(page: n) }
             debugTokens.append(t)
         }
+        for (name, kind) in [("ears", NotchState.PreviewKind.ears), ("layout", .layout), ("motion", .motion)] {
+            var t: Int32 = 0
+            notify_register_dispatch("notchly.debug.preview.\(name)", &t, DispatchQueue.main) { _ in NotchState.shared.preview(kind) }
+            debugTokens.append(t)
+        }
         var tp: Int32 = 0
         notify_register_dispatch("notchly.debug.pause", &tp, DispatchQueue.main) { [weak self] _ in self?.setPaused(true) }
         debugTokens.append(tp)
@@ -186,6 +191,7 @@ final class NotchController {
     private func applyPauseState() {
         let off = Background.paused
         MediaController.shared.setPaused(off)
+        (NSApp.delegate as? AppDelegate)?.refreshMenuIcon()
         if off {
             state.close()
             removeMonitors()
@@ -285,10 +291,33 @@ final class NotchController {
 
     // MARK: Swipe between tabs
 
+    private var stripAccum: CGFloat = 0
+    private var lastStep = Date.distantPast
+
+    /// Mouse wheel / trackpad over the icon strip steps through the tabs (the strip follows the selection),
+    /// so every tab is reachable even when they don't all fit.
+    private func stepTabs(_ ev: NSEvent) {
+        if !ev.momentumPhase.isEmpty { return }
+        var d = abs(ev.scrollingDeltaX) > abs(ev.scrollingDeltaY) ? ev.scrollingDeltaX : ev.scrollingDeltaY
+        if !ev.hasPreciseScrollingDeltas { d *= 10 }
+        stripAccum += d
+        guard abs(stripAccum) >= 30, Date().timeIntervalSince(lastStep) > 0.09 else { return }
+        // The camera tab is never entered by scrolling past it; click it to turn the camera on.
+        let tabs = NotchTab.enabled.filter { $0 != .mirror }
+        if let i = tabs.firstIndex(of: state.tab) ?? tabs.firstIndex(of: .home) {
+            let n = stripAccum < 0 ? i + 1 : i - 1
+            if tabs.indices.contains(n) { state.go(tabs[n]); lastStep = Date() }
+        }
+        stripAccum = 0
+    }
+
     private func scroll(_ ev: NSEvent) {
-        guard state.expanded, P.bool("gestures"), !state.blockSwipe else { return }
-        // Scrolling over the top bar (icon strip) must only scroll the strip, not change pages.
-        if ev.window === panel && ev.locationInWindow.y > panel.frame.height - state.notchSize.height - 6 { return }
+        guard state.expanded else { return }
+        if ev.window === panel && ev.locationInWindow.y > panel.frame.height - state.notchSize.height - 6 {
+            stepTabs(ev)
+            return
+        }
+        guard P.bool("gestures"), !state.blockSwipe else { return }
         if ev.phase.contains(.began) || ev.phase.contains(.mayBegin) { scrollAccum = 0; didSwitch = false }
         let ended = ev.phase.contains(.ended) || ev.phase.contains(.cancelled)
         if !ev.momentumPhase.isEmpty { return }

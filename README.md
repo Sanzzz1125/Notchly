@@ -28,7 +28,7 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 | **Weather** *(opt-in)* | Current conditions and the next hours. Off by default. |
 | **Camera mirror, App launcher** | A quick mirror before a call; your favourite apps one click away. |
 | **Live activities** | Charger plugged/unplugged, low battery, volume, new song, calendar start, finished download. |
-| **Make it yours** | 12 themes (including Glass, which is Liquid Glass on macOS 26), accent colour, card styles, size and corner sliders. **Reorder tabs by dragging, hide the ones you don't use.** The panel adapts cleanly from small (440×130) to large (900×280). |
+| **Make it yours** | 12 themes (including Glass, which is Liquid Glass on macOS 26), accent colour, card styles, size and corner sliders. **Reorder tabs by dragging, hide the ones you don't use.** The panel adapts cleanly from small (440×130) to large (900×280). **Six motion styles** (Springy, Calm, Bouncy, Snappy, Smooth, Instant) with speed, bounce and tab-transition controls, and **live previews**: drag a size, ear, corner or widget slider in Settings and the notch opens to show it. |
 
 <table>
 <tr>
@@ -71,7 +71,7 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 | **⌥ Space** | Open / close from anywhere (stays open until you move the pointer in, or press Esc) |
 | **Esc**, or move the pointer away | Close |
 | Drag a file toward the notch | Open the Tray with it ready to drop |
-| Two-finger swipe left / right | Next / previous tab |
+| Two-finger swipe left / right, or scroll the mouse wheel over the icon strip | Next / previous tab |
 | Drag tab icons in the header | Reorder tabs |
 | 📌 in the header | Keep it open |
 | Right-click the island | Open, Keep Awake, Settings, Quit |
@@ -113,7 +113,7 @@ On first launch a short tour explains each permission. Everything is optional.
 
 ## Battery & performance
 Notchly is event-driven: **no polling timer while the notch is closed.** Measured on a MacBook with `top`: about **0.0–0.1 % CPU and well under one wakeup per second** when idle (it was ~1.1 % before the rewrite).
-- **Battery saver** (Settings → Battery, or the Controls tab): slower clipboard checks, calmer animations, no lyric downloads; can switch on automatically when unplugged.
+- **Battery saver** (Settings → Battery, or the Controls tab): slower clipboard checks, no lyric downloads (calm animations are an option); can switch on automatically when unplugged.
 - **Pause Notchly** (menu bar icon): stops everything, hides the notch.
 - It also pauses itself while the screen is asleep.
 

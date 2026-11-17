@@ -13,8 +13,10 @@ struct HomeTab: View {
     @AppStorage("sideWidth") var sideW = 210.0
     var body: some View {
         GeometryReader { g in
-            let showSide = side != "none" && g.size.width > 500
-            let w = min(CGFloat(sideW), g.size.width * 0.38)
+            // The player keeps at least 330 pt; the widget gets exactly the width you chose when there is room.
+            let room = g.size.width - 330 - DS.Space.m
+            let showSide = side != "none" && room >= 140
+            let w = min(CGFloat(sideW), max(140, room))
             HStack(spacing: DS.Space.m) {
                 MediaCard()
                 if showSide { SideWidget(kind: side).frame(width: w) }

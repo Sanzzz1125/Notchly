@@ -78,12 +78,97 @@ struct IslandAlert: Identifiable {
     var duration: Double = 2.6
 }
 
+/// Animation styles. Raw values 0 and 1 match the old "Springy" / "Calm" setting.
+enum MotionStyle: Int, CaseIterable, Identifiable {
+    case springy = 0, calm = 1, bouncy = 2, snappy = 3, smooth = 4, instant = 5
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .springy: return "Springy"
+        case .calm: return "Calm"
+        case .bouncy: return "Bouncy"
+        case .snappy: return "Snappy"
+        case .smooth: return "Smooth"
+        case .instant: return "Instant"
+        }
+    }
+    var blurb: String {
+        switch self {
+        case .springy: return "Lively spring with a soft overshoot (default)."
+        case .calm: return "Slow and gentle, no overshoot."
+        case .bouncy: return "Playful, clearly overshoots and settles."
+        case .snappy: return "Quick and crisp, barely any bounce."
+        case .smooth: return "Eased glide, no spring at all."
+        case .instant: return "No animation. Best for reduce-motion."
+        }
+    }
+    /// (response, damping) for open, close, alert, tab.
+    var springs: [(Double, Double)] {
+        switch self {
+        case .springy: return [(0.46, 0.80), (0.38, 0.92), (0.38, 0.68), (0.50, 0.90)]
+        case .bouncy: return [(0.55, 0.58), (0.42, 0.76), (0.45, 0.48), (0.55, 0.70)]
+        case .snappy: return [(0.28, 0.88), (0.24, 0.96), (0.26, 0.78), (0.30, 0.92)]
+        default: return []
+        }
+    }
+}
+
+enum TabTransitionStyle: Int, CaseIterable, Identifiable {
+    case slide = 0, push = 1, fade = 2, zoom = 3, none = 4
+    var id: Int { rawValue }
+    var title: String {
+        switch self {
+        case .slide: return "Slide"
+        case .push: return "Push"
+        case .fade: return "Fade"
+        case .zoom: return "Zoom"
+        case .none: return "None"
+        }
+    }
+}
+
 enum Motion {
-    static var calm: Bool { P.int("motion") == 1 || Eco.on }
-    static var open: Animation { calm ? .smooth(duration: 0.45) : .spring(response: 0.46, dampingFraction: 0.8) }
-    static var close: Animation { .spring(response: 0.38, dampingFraction: 0.92) }
-    static var alert: Animation { calm ? .smooth(duration: 0.35) : .spring(response: 0.38, dampingFraction: 0.68) }
-    static var tab: Animation { .spring(response: 0.5, dampingFraction: 0.9) }
+    static var style: MotionStyle {
+        let chosen = MotionStyle(rawValue: P.int("motion")) ?? .springy
+        // Your choice always wins, unless you opted in to calmer motion in battery saver (Settings → Battery).
+        if Eco.on && P.bool("ecoCalmMotion") && chosen != .instant { return .smooth }
+        return chosen
+    }
+    /// 0.5x (slower) ... 2x (faster)
+    static var speed: Double { min(2.5, max(0.4, P.dbl("motionSpeed"))) }
+    /// 0 (no overshoot) ... 1 (very bouncy); 0.5 = the style's own feel.
+    static var bounce: Double { min(1, max(0, P.dbl("motionBounce"))) }
+    static var calm: Bool { style == .calm || style == .smooth || style == .instant }
+
+    private static func make(_ idx: Int, smooth: Double) -> Animation {
+        let st = style
+        if st == .instant { return .linear(duration: 0.01) }
+        if st.springs.isEmpty {   // calm / smooth: eased, bounce slider adds a little spring
+            let dur = (st == .calm ? smooth * 1.45 : smooth) / speed
+            return bounce > 0.65 ? .spring(response: dur, dampingFraction: max(0.6, 1.0 - (bounce - 0.5) * 0.6)) : .smooth(duration: dur)
+        }
+        let (r, d) = st.springs[idx]
+        return .spring(response: r / speed, dampingFraction: min(1, max(0.32, d - (bounce - 0.5) * 0.5)))
+    }
+    static var open: Animation { make(0, smooth: 0.45) }
+    static var close: Animation { make(1, smooth: 0.38) }
+    static var alert: Animation { make(2, smooth: 0.35) }
+    static var tab: Animation { make(3, smooth: 0.42) }
+
+    static func tabTransition(forward: Bool) -> AnyTransition {
+        switch TabTransitionStyle(rawValue: P.int("tabTransition")) ?? .slide {
+        case .slide:
+            return .asymmetric(insertion: .offset(x: forward ? 40 : -40).combined(with: .opacity),
+                               removal: .offset(x: forward ? -40 : 40).combined(with: .opacity))
+        case .push:
+            return .asymmetric(insertion: .move(edge: forward ? .trailing : .leading).combined(with: .opacity),
+                               removal: .move(edge: forward ? .leading : .trailing).combined(with: .opacity))
+        case .fade: return .opacity
+        case .zoom:
+            return .asymmetric(insertion: .scale(scale: 0.9).combined(with: .opacity), removal: .scale(scale: 1.08).combined(with: .opacity))
+        case .none: return .identity
+        }
+    }
 }
 
 final class NotchState: ObservableObject {
@@ -94,6 +179,8 @@ final class NotchState: ObservableObject {
     @Published var notchSize = CGSize(width: 185, height: 32)
     @Published var hasNotch = false
     @Published var pinned = false
+    /// Shows sample ears for a moment so the Ear width setting is visible with nothing playing.
+    @Published var earPreview = false
     @Published var forward = true
     var blockSwipe = false
     /// Opened with the keyboard while the pointer is elsewhere: stay open until the pointer visits, or Esc.
@@ -116,6 +203,47 @@ final class NotchState: ObservableObject {
         withAnimation(Motion.tab) { tab = t }
     }
     private var alertWork: DispatchWorkItem?
+
+    // MARK: Live preview for Settings
+    enum PreviewKind { case layout, ears, motion }
+    private var previewWork: [DispatchWorkItem] = []
+    private var previewOwnsPin = false
+
+    /// Settings sliders call this so a change is visible immediately: it opens the island (or shows sample ears),
+    /// then puts everything back a few seconds after the last change.
+    func preview(_ kind: PreviewKind) {
+        guard !Background.paused else { return }
+        previewWork.forEach { $0.cancel() }
+        previewWork = []
+        func later(_ t: Double, _ f: @escaping () -> Void) {
+            let w = DispatchWorkItem(block: f)
+            previewWork.append(w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: w)
+        }
+        func endLayout() {
+            if previewOwnsPin { previewOwnsPin = false; pinned = false; close() }
+        }
+        switch kind {
+        case .ears:
+            if expanded { endLayout(); close() }
+            withAnimation(Motion.alert) { earPreview = true }
+            later(2.8) { withAnimation(Motion.close) { self.earPreview = false } }
+        case .layout:
+            if !expanded { open(.home) } else if tab != .home { go(.home) }
+            if !pinned { pinned = true; previewOwnsPin = true }
+            later(3.2) { endLayout() }
+        case .motion:
+            if expanded { endLayout(); pinned = false; close() }
+            later(0.45) {
+                self.open(.home)
+                if !self.pinned { self.pinned = true; self.previewOwnsPin = true }
+            }
+            later(1.5) { self.go(.tray) }
+            later(2.3) { self.go(.home) }
+            later(3.1) { endLayout() }
+            later(3.7) { self.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Motion preview", detail: "Alerts use this too", duration: 1.8)) }
+        }
+    }
 
     func open(_ t: NotchTab? = nil, byKeyboard: Bool = false) {
         guard !Background.paused else { return }
@@ -153,7 +281,8 @@ final class NotchState: ObservableObject {
     }
 
     var wingActive: Bool {
-        (P.bool("mediaWings") && MediaController.shared.isPlaying)
+        earPreview
+            || (P.bool("mediaWings") && MediaController.shared.isPlaying)
             || TimerStore.shared.running
             || (P.bool("awakeIndicator") && KeepAwake.shared.on)
     }

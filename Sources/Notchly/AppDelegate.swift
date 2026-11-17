@@ -18,7 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotchController.shared.start()
         buildMenu()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.item?.isVisible = P.bool("showMenuIcon")
+            self?.refreshMenuIcon()
         }
         if !P.bool("onboarded") && !Demo.on {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { Onboarding.show() }
@@ -48,12 +48,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item = it
     }
 
+    /// The menu bar icon is the way back from "Pause", so it stays visible while paused even if hidden in Settings.
+    func refreshMenuIcon() {
+        item?.isVisible = P.bool("showMenuIcon") || Background.user
+        pauseItem?.title = Background.user ? "Resume Notchly" : "Pause Notchly (save battery)"
+        item?.button?.alphaValue = Background.user ? 0.45 : 1
+    }
+
     @objc private func toggle() { NotchState.shared.toggle() }
     @objc private func pause() {
-        let p = !Background.user
-        NotchController.shared.setPaused(p)
-        pauseItem?.title = p ? "Resume Notchly" : "Pause Notchly (save battery)"
-        item?.button?.alphaValue = p ? 0.45 : 1
+        NotchController.shared.setPaused(!Background.user)
+        refreshMenuIcon()
     }
     @objc private func awake() { KeepAwake.shared.toggle() }
     @objc private func settings() { SettingsWindow.show() }

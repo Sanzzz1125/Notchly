@@ -34,6 +34,7 @@ struct RootView: View {
                 .contextMenu {
                     Button(s.expanded ? "Close" : "Open") { s.toggle() }
                     Button(awake.on ? "Turn Keep Awake Off" : "Keep Mac Awake") { awake.toggle() }
+                    Button("Pause Notchly") { NotchController.shared.setPaused(true) }
                     Divider()
                     Button("Settings…") { SettingsWindow.show() }
                     Button("Quit Notchly") { NSApp.terminate(nil) }
@@ -41,6 +42,7 @@ struct RootView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .animation(Motion.alert, value: s.wingActive)
+        .animation(Motion.alert, value: earWidth)
         .foregroundStyle(Color.white)
         .environment(\.colorScheme, .dark)
     }
@@ -89,6 +91,7 @@ struct WingsView: View {
     @ObservedObject var media = MediaController.shared
     @ObservedObject var timer = TimerStore.shared
     @ObservedObject var awake = KeepAwake.shared
+    @ObservedObject var st = NotchState.shared
 
     var body: some View {
         HStack(spacing: 0) {
@@ -110,6 +113,8 @@ struct WingsView: View {
             } else {
                 Image(systemName: "music.note").foregroundStyle(media.tint)
             }
+        } else if st.earPreview && !awake.on {
+            Image(systemName: "music.note").foregroundStyle(P.accent)
         } else {
             Image(systemName: "cup.and.saucer.fill").foregroundStyle(Color.orange)
         }
@@ -121,6 +126,8 @@ struct WingsView: View {
                 .foregroundStyle(Color.orange)
         } else if media.isPlaying {
             Equalizer(tint: media.tint)
+        } else if st.earPreview && !awake.on {
+            Equalizer(tint: P.accent)
         } else {
             Color.clear.frame(width: 1, height: 1)
         }
@@ -173,9 +180,7 @@ struct ExpandedView: View {
                 header.frame(height: s.notchSize.height)
                 pane
                     .id(s.tab)
-                    .transition(.asymmetric(
-                        insertion: .offset(x: s.forward ? 40 : -40).combined(with: .opacity),
-                        removal: .offset(x: s.forward ? -40 : 40).combined(with: .opacity)))
+                    .transition(Motion.tabTransition(forward: s.forward))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .padding(.top, DS.Space.s)
             }
