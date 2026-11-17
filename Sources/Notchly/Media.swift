@@ -1,6 +1,14 @@
 import SwiftUI
 import AppKit
 
+/// Position / duration / lyric tick every second. They live in their own object so the closed
+/// island (which observes MediaController) does not re-render each time.
+final class PlaybackClock: ObservableObject {
+    @Published var position: Double = 0
+    @Published var duration: Double = 0
+    @Published var lyric = ""
+}
+
 final class MediaController: ObservableObject {
     static let shared = MediaController()
     @Published var title = ""
@@ -8,12 +16,13 @@ final class MediaController: ObservableObject {
     @Published var album = ""
     @Published var isPlaying = false
     @Published var hasTrack = false
-    @Published var position: Double = 0
-    @Published var duration: Double = 0
+    let clock = PlaybackClock()
+    var position: Double { get { clock.position } set { if clock.position != newValue { clock.position = newValue } } }
+    var duration: Double { get { clock.duration } set { if clock.duration != newValue { clock.duration = newValue } } }
+    var lyric: String { get { clock.lyric } set { if clock.lyric != newValue { clock.lyric = newValue } } }
     @Published var art: NSImage?
     @Published var tint: Color = .white
     @Published var source = ""
-    @Published var lyric = ""
     @Published var sourceBundle = ""
     private var bridgeLive = false
     private var lastBridgeLine = Date.distantPast
@@ -30,7 +39,8 @@ final class MediaController: ObservableObject {
 
     func start() {
         if Demo.on { startDemo(); return }
-        let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
+        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.poll() }
+        t.tolerance = 1
         RunLoop.main.add(t, forMode: .common)
         startBridge()
         poll()
@@ -140,9 +150,9 @@ final class MediaController: ObservableObject {
     private func poll() {
         if Background.paused { return }
         pollN += 1
-        if Eco.on && pollN % 3 != 0 { return }
+        if Eco.on && pollN % 2 != 0 { return }
         if busy { return }
-        if bridgeLive && Date().timeIntervalSince(lastBridgeLine) < 5 { return }
+        if bridgeLive && Date().timeIntervalSince(lastBridgeLine) < 9 { return }
         let ids = NSWorkspace.shared.runningApplications.compactMap { $0.bundleIdentifier }
         var apps: [String] = []
         if ids.contains("com.spotify.client") { apps.append("Spotify") }
@@ -172,10 +182,10 @@ final class MediaController: ObservableObject {
     }
 
     private func apply(_ i: Info) {
-        source = i.app
-        sourceBundle = i.bundle
-        isPlaying = i.playing
-        hasTrack = true
+        if source != i.app { source = i.app }
+        if sourceBundle != i.bundle { sourceBundle = i.bundle }
+        if isPlaying != i.playing { isPlaying = i.playing }
+        if !hasTrack { hasTrack = true }
         position = i.pos
         duration = i.dur
         let key = i.app + i.title + i.artist

@@ -339,7 +339,7 @@ struct TimerTab: View {
                 Circle().trim(from: 0, to: CGFloat(t.mode == .stopwatch ? (t.elapsed.truncatingRemainder(dividingBy: 60)) / 60 : t.progress))
                     .stroke(t.onBreak ? Color.green : P.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
-                    .animation(.linear(duration: 0.12), value: t.progress)
+                    .animation(.linear(duration: 0.25), value: t.progress)
                 VStack(spacing: 0) {
                     Text(t.display).font(.system(size: ring > 100 ? 24 : 18, weight: .bold, design: .rounded)).monospacedDigit()
                     if t.mode == .focus { Text(t.onBreak ? "Break" : "Focus").font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary) }

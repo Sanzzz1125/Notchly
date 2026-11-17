@@ -79,7 +79,7 @@ struct IslandAlert: Identifiable {
 }
 
 enum Motion {
-    static var calm: Bool { P.int("motion") == 1 }
+    static var calm: Bool { P.int("motion") == 1 || Eco.on }
     static var open: Animation { calm ? .smooth(duration: 0.45) : .spring(response: 0.46, dampingFraction: 0.8) }
     static var close: Animation { .spring(response: 0.38, dampingFraction: 0.92) }
     static var alert: Animation { calm ? .smooth(duration: 0.35) : .spring(response: 0.38, dampingFraction: 0.68) }
@@ -96,6 +96,8 @@ final class NotchState: ObservableObject {
     @Published var pinned = false
     @Published var forward = true
     var blockSwipe = false
+    /// Opened with the keyboard while the pointer is elsewhere: stay open until the pointer visits, or Esc.
+    var awaitingPointer = false
     func move(_ a: NotchTab, before b: NotchTab) {
         var o = NotchTab.ordered
         guard a != b, let i = o.firstIndex(of: a), let ti = o.firstIndex(of: b) else { return }
@@ -115,9 +117,11 @@ final class NotchState: ObservableObject {
     }
     private var alertWork: DispatchWorkItem?
 
-    func open(_ t: NotchTab? = nil) {
+    func open(_ t: NotchTab? = nil, byKeyboard: Bool = false) {
+        guard !Background.paused else { return }
         if let t = t { tab = t }
         if expanded { return }
+        awaitingPointer = byKeyboard
         alertWork?.cancel()
         withAnimation(Motion.open) { alert = nil; expanded = true }
         if P.bool("haptics") {
@@ -128,9 +132,14 @@ final class NotchState: ObservableObject {
         guard expanded else { return }
         pinned = false
         blockSwipe = false
+        awaitingPointer = false
         withAnimation(Motion.close) { expanded = false }
     }
-    func toggle() { expanded ? close() : open(NotchTab(rawValue: P.str("defaultTab"))) }
+    func toggle() {
+        if expanded { close(); return }
+        open(NotchTab(rawValue: P.str("defaultTab")), byKeyboard: true)
+        NotchController.shared.focusPanel()
+    }
 
     func post(_ a: IslandAlert) {
         guard !expanded else { return }

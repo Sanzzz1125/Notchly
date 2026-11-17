@@ -4,6 +4,7 @@ import EventKit
 import IOKit.ps
 import IOKit.pwr_mgt
 import CoreAudio
+import Combine
 
 // MARK: Battery
 final class BatteryService: ObservableObject {
@@ -15,12 +16,20 @@ final class BatteryService: ObservableObject {
     private var first = true
     private var lowFired = false
 
+    private var source: CFRunLoopSource?
     func start() {
-        let t = Timer(timeInterval: 4, repeats: true) { [weak self] _ in self?.update() }
-        RunLoop.main.add(t, forMode: .common)
+        // Power-source changes arrive as notifications, so there is no polling timer.
+        let ctx = Unmanaged.passUnretained(self).toOpaque()
+        if let src = IOPSNotificationCreateRunLoopSource({ c in
+            guard let c = c else { return }
+            Unmanaged<BatteryService>.fromOpaque(c).takeUnretainedValue().update()
+        }, ctx)?.takeRetainedValue() {
+            CFRunLoopAddSource(CFRunLoopGetMain(), src, .commonModes)
+            source = src
+        }
         update()
     }
-    private func update() {
+    func update() {
         if Background.paused { return }
         guard let blob = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
               let list = IOPSCopyPowerSourcesList(blob)?.takeRetainedValue() as? [CFTypeRef] else { return }
@@ -146,7 +155,8 @@ final class TimerStore: ObservableObject {
             endDate = Date().addingTimeInterval(remaining)
         }
         running = true
-        let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in self?.tick() }
+        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.tick() }
+        t.tolerance = 0.05
         RunLoop.main.add(t, forMode: .common)
         tmr = t
     }
@@ -209,14 +219,26 @@ final class StatsService: ObservableObject {
     @Published var cpuHistory: [Double] = Array(repeating: 0, count: 30)
     private var prev: (Double, Double, Double, Double)?
 
+    private var timer: Timer?
     func start() {
-        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            if !Background.paused && NotchState.shared.expanded && (NotchState.shared.tab == .stats || NotchState.shared.tab == .home) { self?.sample() }
-        }
-        t.tolerance = 0.5
-        RunLoop.main.add(t, forMode: .common)
         sample()
+        // Sample only while the island is open.
+        NotchState.shared.$expanded.removeDuplicates().sink { [weak self] open in
+            guard let self = self else { return }
+            self.timer?.invalidate(); self.timer = nil
+            if open {
+                self.sample()
+                let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
+                    let st = NotchState.shared
+                    if !Background.paused && (st.tab == .stats || st.tab == .home) { self?.sample() }
+                }
+                t.tolerance = 0.5
+                RunLoop.main.add(t, forMode: .common)
+                self.timer = t
+            }
+        }.store(in: &bag)
     }
+    private var bag = Set<AnyCancellable>()
     static func demoHistory() -> [Double] {
         var out: [Double] = []
         for i in 0..<30 {
@@ -268,20 +290,40 @@ final class StatsService: ObservableObject {
     }
 }
 
-// MARK: Volume HUD
+// MARK: Volume HUD (CoreAudio property listeners, no polling)
 final class VolumeMonitor {
     static let shared = VolumeMonitor()
     private var last: Float = -1
+    private var dev = AudioDeviceID(0)
+    private var volAddr = AudioObjectPropertyAddress(mSelector: 0x766D7663, mScope: kAudioDevicePropertyScopeOutput, mElement: kAudioObjectPropertyElementMain)
+    private var devAddr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+    private var volBlock: AudioObjectPropertyListenerBlock?
+    private var devBlock: AudioObjectPropertyListenerBlock?
+
     func start() {
-        let t = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in self?.check() }
-        RunLoop.main.add(t, forMode: .common)
         last = read() ?? -1
+        let db: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.rebind() }
+        devBlock = db
+        AudioObjectAddPropertyListenerBlock(AudioObjectID(kAudioObjectSystemObject), &devAddr, DispatchQueue.main, db)
+        rebind()
     }
-    private var tickN = 0
+    private func defaultDevice() -> AudioDeviceID? {
+        var d = AudioDeviceID(0)
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &devAddr, 0, nil, &size, &d) == noErr, d != 0 else { return nil }
+        return d
+    }
+    private func rebind() {
+        if dev != 0, let b = volBlock { AudioObjectRemovePropertyListenerBlock(dev, &volAddr, DispatchQueue.main, b) }
+        guard let d = defaultDevice() else { return }
+        dev = d
+        let b: AudioObjectPropertyListenerBlock = { [weak self] _, _ in self?.check() }
+        volBlock = b
+        AudioObjectAddPropertyListenerBlock(d, &volAddr, DispatchQueue.main, b)
+        last = read() ?? last
+    }
     private func check() {
         if Background.paused { return }
-        tickN += 1
-        if Eco.on && tickN % 3 != 0 { return }
         guard let v = read() else { return }
         if last >= 0 && abs(v - last) > 0.001 && P.bool("levelAlerts") {
             let sym = v < 0.01 ? "speaker.slash.fill" : (v < 0.34 ? "speaker.wave.1.fill" : (v < 0.67 ? "speaker.wave.2.fill" : "speaker.wave.3.fill"))
@@ -290,17 +332,10 @@ final class VolumeMonitor {
         last = v
     }
     private func read() -> Float? {
-        var dev = AudioDeviceID(0)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-                                              mScope: kAudioObjectPropertyScopeGlobal,
-                                              mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &dev) == noErr else { return nil }
+        guard let d = defaultDevice() else { return nil }
         var vol: Float32 = 0
-        size = UInt32(MemoryLayout<Float32>.size)
-        var va = AudioObjectPropertyAddress(mSelector: 0x766D7663, mScope: kAudioDevicePropertyScopeOutput,
-                                            mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(dev, &va, 0, nil, &size, &vol) == noErr else { return nil }
+        var size = UInt32(MemoryLayout<Float32>.size)
+        guard AudioObjectGetPropertyData(d, &volAddr, 0, nil, &size, &vol) == noErr else { return nil }
         return vol
     }
 }

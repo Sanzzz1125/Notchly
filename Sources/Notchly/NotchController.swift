@@ -2,6 +2,7 @@ import SwiftUI
 import AppKit
 import Carbon.HIToolbox
 import notify
+import Combine
 
 final class NotchPanel: NSPanel {
     init() {
@@ -49,12 +50,16 @@ final class NotchController {
     private let state = NotchState.shared
     private var panel: NotchPanel!
     private var hosting: NSHostingView<RootView>!
-    private var timer: Timer?
-    private var hoverStart: Date?
-    private var leaveStart: Date?
+    private var monitors: [Any] = []
+    private var openWork: DispatchWorkItem?
+    private var closeWork: DispatchWorkItem?
+    private var guardTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
     private var lastDrag = NSPasteboard(name: .drag).changeCount
     private var scrollAccum: CGFloat = 0
-    private var lastKey = ""
+    private var didSwitch = false
+    /// After the island closes, hover must leave the notch once before it can re-open (prevents flicker loops).
+    private var armed = true
 
     func start() {
         panel = NotchPanel()
@@ -70,12 +75,29 @@ final class NotchController {
             self?.reposition()
             HotKey.register()
         }
-        schedule(1.0 / 20.0)
+        // Sleep / wake: stop all work while the screen is off.
+        let ws = NSWorkspace.shared.notificationCenter
+        ws.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(true) }
+        ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(false) }
+        ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(true) }
+        ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(false) }
 
-        NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] ev in
-            self?.scroll(ev)
-            return ev
-        }
+        installMonitors()
+
+        // The only polling left: a short guard timer while the island is open (catches a missed mouse event).
+        state.$expanded.removeDuplicates().sink { [weak self] open in
+            guard let self = self else { return }
+            if open {
+                self.openWork?.cancel(); self.openWork = nil
+                self.startGuard()
+            } else {
+                self.closeWork?.cancel(); self.closeWork = nil
+                self.guardTimer?.invalidate(); self.guardTimer = nil
+                self.armed = false
+                self.panel.ignoresMouseEvents = true
+            }
+        }.store(in: &cancellables)
+
         HotKey.handler = { NotchState.shared.toggle() }
         HotKey.register()
         installDebugHooks()
@@ -104,6 +126,15 @@ final class NotchController {
         var tok: Int32 = 0
         notify_register_dispatch("notchly.debug.close", &tok, DispatchQueue.main) { [weak self] _ in self?.state.close() }
         debugTokens.append(tok)
+        var tp: Int32 = 0
+        notify_register_dispatch("notchly.debug.pause", &tp, DispatchQueue.main) { [weak self] _ in self?.setPaused(true) }
+        debugTokens.append(tp)
+        var tr: Int32 = 0
+        notify_register_dispatch("notchly.debug.resume", &tr, DispatchQueue.main) { [weak self] _ in self?.setPaused(false) }
+        debugTokens.append(tr)
+        var tk: Int32 = 0
+        notify_register_dispatch("notchly.debug.keyboard", &tk, DispatchQueue.main) { _ in NotchState.shared.toggle() }
+        debugTokens.append(tk)
         var tok2: Int32 = 0
         notify_register_dispatch("notchly.debug.alert", &tok2, DispatchQueue.main) { _ in
             NotchState.shared.post(IslandAlert(symbol: "bolt.fill", tint: .green, title: "Charging", detail: "82%", level: 0.82, duration: 6))
@@ -134,79 +165,120 @@ final class NotchController {
         if panel.frame != f { panel.setFrame(f, display: true) }
     }
 
-    private var interval: TimeInterval = 0
-    private func schedule(_ iv: TimeInterval) {
-        if iv == interval && timer != nil { return }
-        interval = iv
-        timer?.invalidate()
-        let t = Timer(timeInterval: iv, repeats: true) { [weak self] _ in self?.tick() }
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-    }
+    /// Make the panel key so Esc closes it and text fields work after a keyboard open.
+    func focusPanel() { panel.makeKey() }
+
+    // MARK: Pause
 
     func setPaused(_ p: Bool) {
-        Background.paused = p
-        MediaController.shared.setPaused(p)
-        if p {
+        Background.user = p
+        applyPauseState()
+    }
+    private func setScreenOff(_ off: Bool) {
+        Background.screenOff = off
+        applyPauseState()
+    }
+    private func applyPauseState() {
+        let off = Background.paused
+        MediaController.shared.setPaused(off)
+        if off {
             state.close()
-            timer?.invalidate(); timer = nil; interval = 0
+            removeMonitors()
+            guardTimer?.invalidate(); guardTimer = nil
             panel.orderOut(nil)
         } else {
             reposition()
             panel.orderFrontRegardless()
-            schedule(1.0 / 20.0)
+            installMonitors()
+            if state.expanded { startGuard() }
         }
     }
 
-    private func tick() {
-        let want: TimeInterval = Eco.on ? 0.1 : (state.expanded ? 1.0 / 30.0 : 1.0 / 20.0)
-        if want != interval { schedule(want) }
+    // MARK: Pointer (event driven: no idle timer)
+
+    private func installMonitors() {
+        removeMonitors()
+        let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseDown, .leftMouseUp]
+        if let g = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in self?.evaluate() }) { monitors.append(g) }
+        if let l = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] ev in self?.evaluate(); return ev }) { monitors.append(l) }
+        if let sc = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] ev in self?.scroll(ev); return ev }) { monitors.append(sc) }
+    }
+    private func removeMonitors() {
+        monitors.forEach { NSEvent.removeMonitor($0) }
+        monitors = []
+        openWork?.cancel(); openWork = nil
+        closeWork?.cancel(); closeWork = nil
+    }
+    private func startGuard() {
+        guardTimer?.invalidate()
+        let t = Timer(timeInterval: 0.25, repeats: true) { [weak self] _ in self?.evaluate() }
+        t.tolerance = 0.1
+        RunLoop.main.add(t, forMode: .common)
+        guardTimer = t
+    }
+
+    private func pointerInside() -> Bool {
         let m = NSEvent.mouseLocation
         let pf = panel.frame
+        // Cheap reject: the island always lives inside the panel frame.
+        guard pf.insetBy(dx: -20, dy: -20).contains(m) else { return false }
         let sz = state.islandSize
-        let rect = NSRect(x: pf.midX - sz.width / 2, y: pf.maxY - sz.height, width: sz.width, height: sz.height)
+        let r = NSRect(x: pf.midX - sz.width / 2, y: pf.maxY - sz.height, width: sz.width, height: sz.height)
+        let hot = state.expanded ? r.insetBy(dx: -10, dy: -10) : NSRect(x: r.minX - 8, y: r.minY - 6, width: r.width + 16, height: r.height + 12)
+        return hot.contains(m)
+    }
+
+    private func evaluate() {
+        guard !Background.paused, panel != nil else { return }
+        let inside = pointerInside()
         let down = NSEvent.pressedMouseButtons & 1 != 0
-        let now = Date()
+        if panel.ignoresMouseEvents == inside { panel.ignoresMouseEvents = !inside }
 
         if !state.expanded {
-            let hot = NSRect(x: rect.minX - 8, y: rect.minY - 6, width: rect.width + 16, height: rect.height + 12)
-            let inside = hot.contains(m)
-            panel.ignoresMouseEvents = !inside
-            leaveStart = nil
             let dpb = NSPasteboard(name: .drag).changeCount
-            if down && inside && dpb != lastDrag {
+            if !inside {
+                armed = true
+                openWork?.cancel(); openWork = nil
+                if !down { lastDrag = dpb }
+                return
+            }
+            if down && dpb != lastDrag {           // a file is being dragged onto the notch
                 lastDrag = dpb
                 state.open(.tray)
                 return
             }
             if !down { lastDrag = dpb }
-            if inside && P.int("openMode") == 0 && !down {
-                if hoverStart == nil { hoverStart = now }
-                if now.timeIntervalSince(hoverStart ?? now) >= P.dbl("openDelay") {
-                    hoverStart = nil
-                    state.open(NotchTab(rawValue: P.str("defaultTab")))
+            guard P.int("openMode") == 0, !down, armed, openWork == nil else { return }
+            let delay = P.dbl("openDelay")
+            if delay <= 0.01 { state.open(NotchTab(rawValue: P.str("defaultTab"))); return }
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.openWork = nil
+                if !self.state.expanded, self.armed, self.pointerInside(), NSEvent.pressedMouseButtons & 1 == 0 {
+                    self.state.open(NotchTab(rawValue: P.str("defaultTab")))
                 }
-            } else if !inside {
-                hoverStart = nil
             }
+            openWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: w)
         } else {
-            let hot = rect.insetBy(dx: -10, dy: -10)
-            let inside = hot.contains(m)
-            panel.ignoresMouseEvents = !inside
-            hoverStart = nil
-            if inside || down || state.pinned || !P.bool("collapseOnExit") {
-                leaveStart = nil
-            } else {
-                if leaveStart == nil { leaveStart = now }
-                if now.timeIntervalSince(leaveStart ?? now) >= P.dbl("closeDelay") {
-                    leaveStart = nil
-                    state.close()
+            if inside { state.awaitingPointer = false }
+            let hold = inside || down || state.pinned || state.awaitingPointer || !P.bool("collapseOnExit")
+            if hold { closeWork?.cancel(); closeWork = nil; return }
+            guard closeWork == nil else { return }
+            let w = DispatchWorkItem { [weak self] in
+                guard let self = self else { return }
+                self.closeWork = nil
+                if self.state.expanded, !self.pointerInside(), !self.state.pinned, !self.state.awaitingPointer,
+                   NSEvent.pressedMouseButtons & 1 == 0 {
+                    self.state.close()
                 }
             }
+            closeWork = w
+            DispatchQueue.main.asyncAfter(deadline: .now() + max(0.1, P.dbl("closeDelay")), execute: w)
         }
     }
 
-    private var didSwitch = false
+    // MARK: Swipe between tabs
 
     private func scroll(_ ev: NSEvent) {
         guard state.expanded, P.bool("gestures"), !state.blockSwipe else { return }

@@ -21,6 +21,8 @@ static void *mr(void) {
 
 static NSString *lastKey = @"";
 static BOOL artSent = NO;
+static NSString *lastPrint = @"";
+static NSDate *lastEmit;
 
 static double num(id v) {
     if (![v isKindOfClass:[NSNumber class]]) return 0;
@@ -48,6 +50,13 @@ static void emit(NSDictionary *d, BOOL playing, NSString *app) {
         o[@"app"] = ([app isKindOfClass:[NSString class]] ? app : @"");
         NSString *key = [NSString stringWithFormat:@"%@|%@|%@", title, artist, album];
         if (![key isEqualToString:lastKey]) { lastKey = key; artSent = NO; }
+        // Only talk to the app when something changed: every second while playing (progress),
+        // otherwise only on change plus a slow heartbeat so the app knows the bridge is alive.
+        NSString *fp = [NSString stringWithFormat:@"%@|%d|%@", key, playing, o[@"app"]];
+        NSTimeInterval since = lastEmit ? [[NSDate date] timeIntervalSinceDate:lastEmit] : 1e9;
+        BOOL changed = ![fp isEqualToString:lastPrint];
+        if (!changed && !(playing && since >= 0.95) && since < 4.0) return;
+        lastPrint = fp; lastEmit = [NSDate date];
         id art = d[@"kMRMediaRemoteNowPlayingInfoArtworkData"];
         if (!artSent && [art isKindOfClass:[NSData class]] && [art length] > 0) {
             o[@"art"] = [art base64EncodedStringWithOptions:0];
@@ -71,7 +80,7 @@ void notchly_media_stream(void *a, void *b) {
     if (!getInfo || !getPlaying || !getApp) return;
     dispatch_queue_t q = dispatch_queue_create("notchly.mr", DISPATCH_QUEUE_SERIAL);
     timerSrc = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0, q);
-    dispatch_source_set_timer(timerSrc, DISPATCH_TIME_NOW, (uint64_t)(0.5 * NSEC_PER_SEC), (uint64_t)(0.1 * NSEC_PER_SEC));
+    dispatch_source_set_timer(timerSrc, DISPATCH_TIME_NOW, (uint64_t)(1.0 * NSEC_PER_SEC), (uint64_t)(0.3 * NSEC_PER_SEC));
     dispatch_source_set_event_handler(timerSrc, ^{
         getInfo(q, ^(CFDictionaryRef info) {
             NSDictionary *d = info ? [(__bridge NSDictionary *)info copy] : @{};

@@ -45,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggle() { NotchState.shared.toggle() }
     @objc private func pause() {
-        let p = !Background.paused
+        let p = !Background.user
         NotchController.shared.setPaused(p)
         pauseItem?.title = p ? "Resume Notchly" : "Pause Notchly (save battery)"
         item?.button?.alphaValue = p ? 0.45 : 1

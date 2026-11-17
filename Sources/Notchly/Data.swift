@@ -218,8 +218,8 @@ final class ClipboardStore: ObservableObject {
         }
         let pins = UserDefaults.standard.stringArray(forKey: "clipPins") ?? []
         items = pins.map { ClipItem(id: UUID(), text: $0, pinned: true, date: .distantPast, app: "") }
-        let t = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in self?.check() }
-        t.tolerance = 0.3
+        let t = Timer(timeInterval: 1.0, repeats: true) { [weak self] _ in self?.check() }
+        t.tolerance = 0.5
         RunLoop.main.add(t, forMode: .common)
         timer = t
     }

@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-func clock(_ s: Double) -> String {
+func mmss(_ s: Double) -> String {
     let v = Int(max(0, s))
     return String(format: "%d:%02d", v / 60, v % 60)
 }
@@ -62,6 +62,7 @@ struct Scrubber: View {
 
 struct MediaCard: View {
     @ObservedObject var m = MediaController.shared
+    @ObservedObject var clock = MediaController.shared.clock
 
     var body: some View {
         GeometryReader { g in
@@ -112,24 +113,24 @@ struct MediaCard: View {
     }
 
     func info(_ compact: Bool, _ width: CGFloat) -> some View {
-        let frac = m.duration > 0 ? m.position / m.duration : 0
+        let frac = clock.duration > 0 ? clock.position / clock.duration : 0
         return VStack(alignment: .leading, spacing: 3) {
             Text(m.title).font(DS.Typo.title).lineLimit(1)
-            if !(compact && !m.lyric.isEmpty) {
+            if !(compact && !clock.lyric.isEmpty) {
                 Text(m.artist).font(DS.Typo.body).foregroundStyle(DS.Ink.secondary).lineLimit(1)
             }
-            if !m.lyric.isEmpty {
-                Text(m.lyric).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(m.tint).lineLimit(1)
-                    .id(m.lyric)
+            if !clock.lyric.isEmpty {
+                Text(clock.lyric).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(m.tint).lineLimit(1)
+                    .id(clock.lyric)
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 5)), removal: .opacity))
             }
             Spacer(minLength: 0)
             Scrubber(value: frac, tint: m.tint) { m.seek($0) }
             if !compact {
                 HStack {
-                    Text(clock(frac * m.duration))
+                    Text(mmss(frac * clock.duration))
                     Spacer()
-                    Text("-" + clock(max(0, m.duration - frac * m.duration)))
+                    Text("-" + mmss(max(0, clock.duration - frac * clock.duration)))
                 }
                 .font(.system(size: 10, weight: .medium)).monospacedDigit().foregroundStyle(DS.Ink.tertiary)
             }
@@ -149,7 +150,7 @@ struct MediaCard: View {
                 Spacer(minLength: 0)
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: m.lyric)
+        .animation(.easeInOut(duration: 0.25), value: clock.lyric)
         .frame(maxWidth: .infinity)
     }
 }

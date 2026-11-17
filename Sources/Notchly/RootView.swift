@@ -69,7 +69,7 @@ struct RootView: View {
 struct Equalizer: View {
     let tint: Color
     var body: some View {
-        TimelineView(.animation(minimumInterval: Eco.on ? 0.2 : 1.0 / 30.0)) { tl in
+        TimelineView(.animation(minimumInterval: Eco.on ? 0.25 : 1.0 / 20.0)) { tl in
             let t = tl.date.timeIntervalSinceReferenceDate
             HStack(spacing: 2) {
                 ForEach(0..<4, id: \.self) { i in

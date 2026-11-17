@@ -48,7 +48,11 @@ extension Color {
 
 /// Global switches for background work.
 enum Background {
-    static var paused = false
+    /// User switched Notchly off ("Pause everything").
+    static var user = false
+    /// Screen asleep / Mac asleep.
+    static var screenOff = false
+    static var paused: Bool { user || screenOff }
 }
 
 enum Eco {
