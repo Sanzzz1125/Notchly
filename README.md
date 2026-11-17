@@ -6,6 +6,13 @@ A dynamic island for your MacBook notch — music, calendar, reminders, clipboar
 
 Free, open source, no account, **no tracking**. Inspired by apps like Dynamic Ledge and Seam; not affiliated with them.
 
+<p align="center">
+  <img src="docs/screenshot-player.png" alt="Notchly — now playing with synced lyrics" width="760"><br>
+  <img src="docs/screenshot-home.png" alt="Notchly — home, tabs and settings" width="760">
+</p>
+
+> Screenshots are from the app running on a MacBook with a notch. Your look depends on the theme you pick.
+
 ## Is it safe?
 - 🔒 **Local only** – no server, no analytics, no telemetry. See [PRIVACY.md](PRIVACY.md).
 - 🌐 **Network is optional** – only lyrics (lrclib.net) and Spotify artwork, and you can turn it off in Settings → Privacy.
@@ -17,7 +24,7 @@ Free, open source, no account, **no tracking**. Inspired by apps like Dynamic Le
 - Hover (or click / ⌥Space) to open; spring animations; two-finger swipe between tabs
 - **Now Playing from any app** (Spotify, Apple Music, YouTube in a browser, VLC…) with artwork, progress, controls and synced lyrics; choose which app groups to show
 - Live activities: music ears, timer, keep-awake, charger, low battery, volume, calendar start, downloads
-- Tabs (drag to reorder, show/hide): Home, Tray + AirDrop, Clipboard, Notes, Calendar, Reminders, Timer/Stopwatch/Focus, System stats, Camera mirror, App launcher
+- Tabs (drag to reorder, show/hide): Home, Tray (select files, drag them out to any folder, AirDrop), Clipboard, Notes, Calendar, Reminders, Timer/Stopwatch/Focus, System stats, Camera mirror, App launcher
 - 11 themes + glass (Liquid Glass on macOS 26), card styles, size / corner / ear sliders
 - **Battery saver** and a **Pause Notchly** switch to stop all background work
 
@@ -33,6 +40,9 @@ The app is created in `build/Notchly.app`. If macOS blocks it: right-click → O
 
 ## Battery & background use
 Settings → Battery: *Pause completely*, *Battery saver*, *auto-enable when unplugged*. Menu bar icon → *Pause Notchly* also works.
+
+## Uninstall
+Quit from the menu bar icon, delete `Notchly.app`, and optionally remove its settings with `defaults delete com.sanketh.Notchly`.
 
 ## Contributing
 Issues and PRs welcome. Please keep the no-telemetry promise.
