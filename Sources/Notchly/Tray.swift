@@ -86,28 +86,55 @@ struct TileDrag: NSViewRepresentable {
     }
 }
 
+struct DropZone: View {
+    let symbol: String
+    let title: String
+    let action: ([URL]) -> Void
+    @StateObject private var hot = Box<Bool>(false)
+    var body: some View {
+        VStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 19, weight: .medium))
+            Text(title).font(DS.Typo.caption)
+        }
+        .foregroundStyle(hot.v ? P.accent : DS.Ink.secondary)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous).fill(hot.v ? P.accent.opacity(0.18) : DS.Fill.base))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous)
+            .strokeBorder(hot.v ? P.accent : Color.white.opacity(0.2), style: StrokeStyle(lineWidth: 1.4, dash: [6, 4])))
+        .scaleEffect(hot.v ? 1.03 : 1)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hot.v)
+        .onDrop(of: [UTType.fileURL], isTargeted: $hot.v) { providers in
+            loadFileURLs(providers, action)
+            return true
+        }
+    }
+}
+
 struct TrayTile: View {
     let url: URL
     @ObservedObject var tray = TrayStore.shared
+    @StateObject private var hover = Box<Bool>(false)
     var body: some View {
         let sel = tray.selected.contains(url)
         VStack(spacing: 4) {
             ZStack(alignment: .topTrailing) {
-                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 44, height: 44)
+                Image(nsImage: NSWorkspace.shared.icon(forFile: url.path)).resizable().frame(width: 42, height: 42)
                 if sel {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 15)).foregroundStyle(Color.white, P.accent)
-                        .offset(x: 6, y: -5)
+                        .offset(x: 6, y: -5).transition(.scale.combined(with: .opacity))
                 }
             }
-            Text(url.lastPathComponent).font(.system(size: 10)).lineLimit(1).truncationMode(.middle)
+            Text(url.lastPathComponent).font(DS.Typo.caption).lineLimit(1).truncationMode(.middle)
                 .frame(maxWidth: .infinity)
         }
         .frame(width: 80)
         .padding(.vertical, 7).padding(.horizontal, 4)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(sel ? P.accent.opacity(0.28) : Color.white.opacity(0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(sel ? P.accent : Color.clear, lineWidth: 1.5))
+        .background(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(sel ? P.accent.opacity(0.28) : (hover.v ? DS.Fill.hover : DS.Fill.base)))
+        .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(sel ? P.accent : Color.clear, lineWidth: 1.5))
         .overlay(TileDrag(url: url))
+        .onHover { h in withAnimation(DS.hoverAnim) { hover.v = h } }
+        .animation(DS.press, value: sel)
         .help(url.lastPathComponent)
     }
 }
@@ -116,72 +143,61 @@ struct TrayTab: View {
     @ObservedObject var tray = TrayStore.shared
     @AppStorage("trayRemove") var removeAfter = true
 
-    private func chip(_ title: String, _ symbol: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 3) {
-                Image(systemName: symbol).font(.system(size: 10))
-                Text(title).font(.system(size: 11, weight: .medium))
-            }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Capsule().fill(Color.white.opacity(0.09)))
-        }
-        .buttonStyle(.plain)
-    }
-
     var body: some View {
-        HStack(spacing: 10) {
-            VStack(spacing: 8) {
-                DropZone(symbol: "tray.and.arrow.down.fill", title: "Drop to hold") { tray.add($0) }
-                DropZone(symbol: "airplayaudio", title: "AirDrop") { urls in
-                    NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
+        GeometryReader { g in
+            let side: CGFloat = g.size.width > 520 ? 124 : 96
+            HStack(spacing: DS.Space.s + 2) {
+                VStack(spacing: DS.Space.s) {
+                    DropZone(symbol: "tray.and.arrow.down.fill", title: "Drop to hold") { tray.add($0) }
+                    DropZone(symbol: "airplayaudio", title: "AirDrop") { urls in
+                        NSSharingService(named: .sendViaAirDrop)?.perform(withItems: urls)
+                    }
                 }
-            }
-            .frame(width: 124)
-            VStack(spacing: 6) {
-                if !tray.files.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 6) {
-                            chip("All", "checkmark.circle") { tray.selectAll() }
-                            if !tray.selected.isEmpty {
-                                chip("None", "circle") { tray.deselect() }
-                                chip("AirDrop", "airplayaudio") {
-                                    NSSharingService(named: .sendViaAirDrop)?.perform(withItems: tray.selectedFiles)
+                .frame(width: side)
+                VStack(spacing: DS.Space.xs) {
+                    if !tray.files.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: DS.Space.xs) {
+                                Chip(title: "All", symbol: "checkmark.circle") { tray.selectAll() }
+                                if !tray.selected.isEmpty {
+                                    Chip(title: "None", symbol: "circle") { tray.deselect() }
+                                    Chip(title: "AirDrop", symbol: "airplayaudio", prominent: true) {
+                                        NSSharingService(named: .sendViaAirDrop)?.perform(withItems: tray.selectedFiles)
+                                    }
+                                    Chip(title: "Remove", symbol: "minus.circle") { tray.remove(tray.selectedFiles) }
                                 }
-                                chip("Remove", "minus.circle") { tray.remove(tray.selectedFiles) }
+                                Chip(title: "Clear", symbol: "trash") { tray.clear() }
+                                Toggle("Remove after drop", isOn: $removeAfter)
+                                    .toggleStyle(.checkbox).font(DS.Typo.caption)
+                                Text(tray.selected.isEmpty ? "Click to select · drag to move" : "\(tray.selected.count) selected · drag to move")
+                                    .font(DS.Typo.caption).foregroundStyle(DS.Ink.tertiary)
                             }
-                            chip("Clear", "trash") { tray.clear() }
-                            Toggle("Remove after drop", isOn: $removeAfter)
-                                .toggleStyle(.checkbox).font(.system(size: 11))
-                            Text(tray.selected.isEmpty ? "Click files to select · drag to move" : "\(tray.selected.count) selected · drag to move")
-                                .font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.5))
+                        }
+                        .frame(height: 24)
+                        .onHover { NotchState.shared.blockSwipe = $0 }
+                    }
+                    ZStack {
+                        if tray.files.isEmpty {
+                            EmptyState(symbol: "square.stack.3d.up", title: "Drop files here", subtitle: "Then drag them anywhere. Select several to move them together.")
+                        } else {
+                            ScrollView(.vertical, showsIndicators: false) {
+                                LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: DS.Space.s)], spacing: DS.Space.s) {
+                                    ForEach(tray.files, id: \.self) { u in TrayTile(url: u) }
+                                }
+                                .padding(DS.Space.s)
+                            }
                         }
                     }
-                    .frame(height: 24)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .card()
                     .onHover { NotchState.shared.blockSwipe = $0 }
-                }
-                ZStack {
-                    if tray.files.isEmpty {
-                        VStack(spacing: 6) {
-                            Image(systemName: "square.stack.3d.up").font(.system(size: 22)).foregroundStyle(Color.white.opacity(0.35))
-                            Text("Drop files here, then drag them anywhere").font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.5))
-                        }
-                    } else {
-                        ScrollView(.vertical, showsIndicators: false) {
-                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 84), spacing: 8)], spacing: 8) {
-                                ForEach(tray.files, id: \.self) { u in TrayTile(url: u) }
-                            }
-                            .padding(8)
-                        }
+                    .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
+                        loadFileURLs(providers) { tray.add($0) }
+                        return true
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .card()
-                .onHover { NotchState.shared.blockSwipe = $0 }
-                .onDrop(of: [UTType.fileURL], isTargeted: nil) { providers in
-                    loadFileURLs(providers) { tray.add($0) }
-                    return true
                 }
             }
+            .frame(width: g.size.width, height: g.size.height)
         }
     }
 }

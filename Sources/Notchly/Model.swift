@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum NotchTab: String, CaseIterable, Identifiable {
-    case home, tray, clipboard, notes, calendar, reminders, timer, stats, mirror, apps
+    case home, tray, clipboard, notes, calendar, reminders, timer, stats, controls, weather, apps, mirror
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -14,6 +14,8 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .reminders: return "Reminders"
         case .timer: return "Timer"
         case .stats: return "System"
+        case .controls: return "Controls"
+        case .weather: return "Weather"
         case .mirror: return "Mirror"
         case .apps: return "Apps"
         }
@@ -28,6 +30,8 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .reminders: return "checklist"
         case .timer: return "timer"
         case .stats: return "cpu"
+        case .controls: return "switch.2"
+        case .weather: return "cloud.sun.fill"
         case .mirror: return "camera.fill"
         case .apps: return "square.grid.2x2.fill"
         }
@@ -43,7 +47,24 @@ enum NotchTab: String, CaseIterable, Identifiable {
         UserDefaults.standard.set(a.map { $0.rawValue }.joined(separator: ","), forKey: "tabOrder")
     }
     static var enabled: [NotchTab] {
-        ordered.filter { $0 == .home || UserDefaults.standard.bool(forKey: "tab_\($0.rawValue)") }
+        ordered.filter { $0 == .home || $0.isOn }
+    }
+    var isOn: Bool { UserDefaults.standard.bool(forKey: "tab_\(rawValue)") }
+    var blurb: String {
+        switch self {
+        case .home: return "Now playing and your next event"
+        case .tray: return "Hold files, drag them out, AirDrop"
+        case .clipboard: return "History with search and pins"
+        case .notes: return "Quick notes that save as you type"
+        case .calendar: return "This week at a glance"
+        case .reminders: return "Tick off to-dos"
+        case .timer: return "Timer, stopwatch, focus sessions"
+        case .stats: return "CPU, memory, disk, battery"
+        case .controls: return "Dark mode, mute, keep awake, shortcuts"
+        case .weather: return "Opt-in forecast (uses the internet)"
+        case .apps: return "Launch your favourite apps"
+        case .mirror: return "Camera mirror"
+        }
     }
 }
 

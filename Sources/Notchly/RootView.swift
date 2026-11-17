@@ -2,20 +2,6 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-extension View {
-    func card(_ r: CGFloat = 16) -> some View {
-        let style = P.int("cardStyle")
-        let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
-        return background(
-            ZStack {
-                shape.fill(Color.white.opacity(style == 1 ? 0.02 : 0.055))
-                if style == 2 { shape.fill(LinearGradient(colors: [Color.white.opacity(0.06), Color.clear], startPoint: .top, endPoint: .center)) }
-                shape.strokeBorder(Color.white.opacity(style == 0 ? 0.03 : 0.09), lineWidth: 1)
-            }
-        )
-    }
-}
-
 struct RootView: View {
     @ObservedObject var s = NotchState.shared
     @ObservedObject var media = MediaController.shared
@@ -38,6 +24,7 @@ struct RootView: View {
             Surface(t: s.shoulder, b: s.cornerR, theme: theme, accent: Color(hex: accentHex),
                     tint: glassTint, expanded: s.expanded, artTint: media.tint)
                 .frame(width: size.width, height: size.height)
+                .shadow(color: Color.black.opacity(s.expanded ? 0.4 : 0), radius: 16, y: 8)
                 .opacity(hidden ? 0 : 1)
             content(full)
                 .frame(width: full.width, height: full.height, alignment: .top)
@@ -61,7 +48,7 @@ struct RootView: View {
     @ViewBuilder func content(_ size: CGSize) -> some View {
         if s.expanded {
             ExpandedView()
-                .transition(.asymmetric(insertion: .opacity.animation(.easeOut(duration: 0.28).delay(0.14)),
+                .transition(.asymmetric(insertion: .opacity.combined(with: .scale(scale: 0.97, anchor: .top)).animation(.easeOut(duration: 0.3).delay(0.12)),
                                         removal: .opacity.animation(.easeIn(duration: 0.1))))
         } else if let a = s.alert {
             AlertView(alert: a, notch: s.notchSize)
@@ -175,7 +162,6 @@ struct AlertView: View {
 
 struct ExpandedView: View {
     @ObservedObject var s = NotchState.shared
-    @ObservedObject var bat = BatteryService.shared
     @AppStorage("accentHex") var accentHex = "#0A84FF"
     @Namespace private var ns
 
@@ -188,31 +174,31 @@ struct ExpandedView: View {
                 pane
                     .id(s.tab)
                     .transition(.asymmetric(
-                        insertion: .move(edge: s.forward ? .trailing : .leading).combined(with: .opacity),
-                        removal: .move(edge: s.forward ? .leading : .trailing).combined(with: .opacity)))
+                        insertion: .offset(x: s.forward ? 40 : -40).combined(with: .opacity),
+                        removal: .offset(x: s.forward ? -40 : 40).combined(with: .opacity)))
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding(.top, 8)
+                    .padding(.top, DS.Space.s)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 20)
+            .padding(.horizontal, DS.Space.xl - 2)
+            .padding(.bottom, DS.Space.m + 2)
         }
     }
 
     var mirrorFull: some View {
         ZStack(alignment: .topLeading) {
             CameraPreview()
-            HStack(spacing: 8) {
-                Button { s.go(.home) } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left").font(.system(size: 11, weight: .bold))
-                        Text("Back").font(.system(size: 12, weight: .semibold))
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Capsule().fill(Color.black.opacity(0.55)))
-                }.buttonStyle(.plain)
-                Spacer()
+            Button { s.go(.home) } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "chevron.left").font(.system(size: 10, weight: .bold))
+                    Text("Back").font(DS.Typo.caption)
+                }
+                .padding(.horizontal, 11).frame(height: 26)
+                .background(Capsule().fill(.ultraThinMaterial))
+                .background(Capsule().fill(Color.black.opacity(0.35)))
+                .contentShape(Capsule())
             }
-            .padding(.leading, 18).padding(.top, 4)
+            .buttonStyle(PressStyle(radius: 13, scale: 0.94, fill: false))
+            .padding(.leading, 18).padding(.top, 5)
         }
     }
 
@@ -220,16 +206,17 @@ struct ExpandedView: View {
         Button { s.go(t) } label: {
             ZStack {
                 if s.tab == t {
-                    Capsule().fill(Color(hex: accentHex).opacity(0.9))
+                    Capsule().fill(Color(hex: accentHex))
                         .matchedGeometryEffect(id: "sel", in: ns)
+                        .shadow(color: Color(hex: accentHex).opacity(0.5), radius: 6, y: 1)
                 }
                 Image(systemName: t.symbol).font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(s.tab == t ? Color.white : Color.white.opacity(0.55))
+                    .foregroundStyle(s.tab == t ? Color.white : DS.Ink.secondary)
             }
-            .frame(width: 28, height: 28)
+            .frame(width: 30, height: 26)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(PressStyle(radius: 13, scale: 0.9, fill: s.tab != t))
         .help(t.title)
         .onDrag { NSItemProvider(object: t.rawValue as NSString) }
         .onDrop(of: [UTType.plainText], isTargeted: nil) { providers in
@@ -243,40 +230,55 @@ struct ExpandedView: View {
         }
     }
 
+    var pinButton: some View {
+        IconButton(symbol: s.pinned ? "pin.fill" : "pin", size: 26, icon: 11,
+                   tint: s.pinned ? Color(hex: accentHex) : DS.Ink.secondary, help: s.pinned ? "Unpin" : "Keep open") { s.pinned.toggle() }
+    }
+    var gearButton: some View {
+        IconButton(symbol: "gearshape.fill", size: 26, icon: 11, help: "Settings") { SettingsWindow.show() }
+    }
+
     var header: some View {
-        HStack(spacing: 0) {
-            Text(s.tab.title).font(.system(size: 13, weight: .semibold)).foregroundStyle(Color.white.opacity(0.85))
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Spacer().frame(width: s.notchSize.width)
+        GeometryReader { g in
+            let wing = max(60, (g.size.width - s.notchSize.width) / 2)
+            let narrow = wing < 190
+            let tabs = NotchTab.enabled
+            let stripW = wing - (narrow ? 4 : 62)
+            let overflow = CGFloat(tabs.count) * 30 > stripW
             HStack(spacing: 0) {
-                GeometryReader { g in
+                HStack(spacing: 0) {
+                    if narrow {
+                        pinButton; gearButton
+                    } else {
+                        Text(s.tab.title).font(DS.Typo.headline).foregroundStyle(DS.Ink.primary.opacity(0.9))
+                            .id(s.tab.rawValue).transition(.opacity.combined(with: .offset(y: 4)))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .frame(width: wing, alignment: .leading)
+                Spacer().frame(width: s.notchSize.width)
+                HStack(spacing: 0) {
                     ScrollViewReader { proxy in
                         ScrollView(.horizontal, showsIndicators: false) {
                             HStack(spacing: 0) {
-                                ForEach(NotchTab.enabled) { t in tabButton(t).id(t) }
+                                ForEach(tabs) { t in tabButton(t).id(t) }
                             }
-                            .frame(minWidth: g.size.width, alignment: .trailing)
+                            .frame(minWidth: stripW, alignment: .trailing)
                         }
                         .onChange(of: s.tab) { _, new in
                             withAnimation(Motion.tab) { proxy.scrollTo(new, anchor: .center) }
                         }
                     }
+                    .frame(width: stripW)
+                    .mask(
+                        LinearGradient(stops: [.init(color: overflow ? .clear : .black, location: 0), .init(color: .black, location: overflow ? 0.1 : 0),
+                                               .init(color: .black, location: overflow ? 0.9 : 1), .init(color: overflow ? .clear : .black, location: 1)],
+                                       startPoint: .leading, endPoint: .trailing))
+                    if !narrow { pinButton; gearButton }
                 }
-                .frame(height: 28)
-                .padding(.trailing, 8)
-                Button { s.pinned.toggle() } label: {
-                    Image(systemName: s.pinned ? "pin.fill" : "pin")
-                        .foregroundStyle(s.pinned ? Color(hex: accentHex) : Color.white.opacity(0.7))
-                        .frame(width: 28, height: 28)
-                }.buttonStyle(.plain).help("Keep open")
-                Button { SettingsWindow.show() } label: {
-                    Image(systemName: "gearshape.fill").foregroundStyle(Color.white.opacity(0.7))
-                        .frame(width: 28, height: 28)
-                }.buttonStyle(.plain).help("Settings")
+                .frame(width: wing, alignment: .trailing)
             }
-            .font(.system(size: 12))
-            .frame(maxWidth: .infinity)
-            .padding(.leading, 10)
+            .animation(Motion.tab, value: s.tab)
         }
     }
 
@@ -290,8 +292,10 @@ struct ExpandedView: View {
         case .reminders: RemindersTab()
         case .timer: TimerTab()
         case .stats: StatsTab()
-        case .mirror: MirrorTab()
+        case .controls: ControlsTab()
+        case .weather: WeatherTab()
         case .apps: AppsTab()
+        case .mirror: MirrorTab()
         }
     }
 }

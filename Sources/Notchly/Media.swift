@@ -29,10 +29,26 @@ final class MediaController: ObservableObject {
     struct Info { var app: String; var playing: Bool; var title: String; var artist: String; var album: String; var pos: Double; var dur: Double; var art: String; var bundle: String = ""; var artData: Data? = nil }
 
     func start() {
+        if Demo.on { startDemo(); return }
         let t = Timer(timeInterval: 1, repeats: true) { [weak self] _ in self?.poll() }
         RunLoop.main.add(t, forMode: .common)
         startBridge()
         poll()
+    }
+
+    private func startDemo() {
+        title = "Golden Hour"; artist = "Neon Harbor"; album = "Afterglow"; isPlaying = true; hasTrack = true
+        position = 84; duration = 225; source = "Music"; lyric = "Hold on, we're almost home"
+        let img = NSImage(size: NSSize(width: 300, height: 300), flipped: false) { r in
+            NSGradient(colors: [NSColor(srgbRed: 1, green: 0.62, blue: 0.2, alpha: 1), NSColor(srgbRed: 0.93, green: 0.2, blue: 0.45, alpha: 1), NSColor(srgbRed: 0.25, green: 0.12, blue: 0.5, alpha: 1)])?.draw(in: r, angle: -70)
+            NSColor(white: 1, alpha: 0.9).setFill()
+            NSBezierPath(ovalIn: NSRect(x: 95, y: 120, width: 110, height: 110)).fill()
+            NSColor(srgbRed: 0.25, green: 0.12, blue: 0.5, alpha: 1).setFill()
+            NSBezierPath(rect: NSRect(x: 0, y: 0, width: 300, height: 105)).fill()
+            return true
+        }
+        art = img
+        tint = MediaController.average(img)
     }
 
     // MARK: System-wide bridge (MediaRemote through perl)

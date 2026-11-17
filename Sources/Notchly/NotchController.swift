@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import Carbon.HIToolbox
+import notify
 
 final class NotchPanel: NSPanel {
     init() {
@@ -77,6 +78,37 @@ final class NotchController {
         }
         HotKey.handler = { NotchState.shared.toggle() }
         HotKey.register()
+        installDebugHooks()
+    }
+
+    private var debugTokens: [Int32] = []
+    /// Developer hooks for scripted screenshots: `defaults write com.sanketh.Notchly debugHooks -bool true`,
+    /// then `notifyutil -p notchly.debug.open.tray`. Local-only (Darwin notifications), off by default.
+    private func installDebugHooks() {
+        guard P.bool("debugHooks") else { return }
+        for t in NotchTab.allCases {
+            var tok: Int32 = 0
+            notify_register_dispatch("notchly.debug.open.\(t.rawValue)", &tok, DispatchQueue.main) { [weak self] _ in
+                self?.state.pinned = true
+                if self?.state.expanded == true { self?.state.go(t) } else { self?.state.open(t) }
+                self?.state.pinned = true
+            }
+            debugTokens.append(tok)
+        }
+        for p in Pane.allCases {
+            var t: Int32 = 0
+            let name = "notchly.debug.settings." + p.rawValue.lowercased().replacingOccurrences(of: " & ", with: "").replacingOccurrences(of: " ", with: "")
+            notify_register_dispatch(name, &t, DispatchQueue.main) { _ in SettingsWindow.show(p) }
+            debugTokens.append(t)
+        }
+        var tok: Int32 = 0
+        notify_register_dispatch("notchly.debug.close", &tok, DispatchQueue.main) { [weak self] _ in self?.state.close() }
+        debugTokens.append(tok)
+        var tok2: Int32 = 0
+        notify_register_dispatch("notchly.debug.alert", &tok2, DispatchQueue.main) { _ in
+            NotchState.shared.post(IslandAlert(symbol: "bolt.fill", tint: .green, title: "Charging", detail: "82%", level: 0.82, duration: 6))
+        }
+        debugTokens.append(tok2)
     }
 
     private func targetScreen() -> NSScreen? {

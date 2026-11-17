@@ -2,9 +2,15 @@ import SwiftUI
 import AppKit
 import ServiceManagement
 
+final class SettingsNav: ObservableObject {
+    static let shared = SettingsNav()
+    @Published var pane: Pane = .appearance
+}
+
 enum SettingsWindow {
     static var window: NSWindow?
-    static func show() {
+    static func show(_ pane: Pane? = nil) {
+        if let p = pane { SettingsNav.shared.pane = p }
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
@@ -23,7 +29,7 @@ enum SettingsWindow {
 
 enum Pane: String, CaseIterable, Identifiable {
     case general = "General", appearance = "Appearance", behavior = "Behavior", tabs = "Tabs & Home"
-    case alerts = "Live Activities", media = "Media", timer = "Timer", power = "Battery", privacy = "Privacy", about = "About"
+    case alerts = "Live Activities", media = "Media", timer = "Timer", controls = "Controls", shortcuts = "Shortcuts", power = "Battery", privacy = "Privacy", about = "About"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -34,6 +40,8 @@ enum Pane: String, CaseIterable, Identifiable {
         case .alerts: return "bell.badge.fill"
         case .media: return "music.note"
         case .timer: return "timer"
+        case .controls: return "switch.2"
+        case .shortcuts: return "bolt.fill"
         case .power: return "battery.100.bolt"
         case .privacy: return "lock.shield.fill"
         case .about: return "info.circle.fill"
@@ -42,7 +50,7 @@ enum Pane: String, CaseIterable, Identifiable {
 }
 
 struct SettingsView: View {
-    @StateObject private var sel = Box<Pane>(.appearance)
+    @ObservedObject private var nav = SettingsNav.shared
     var body: some View {
         HStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 2) {
@@ -52,7 +60,7 @@ struct SettingsView: View {
                 }
                 .padding(.bottom, 12).padding(.top, 8)
                 ForEach(Pane.allCases) { p in
-                    Button { sel.v = p } label: {
+                    Button { nav.pane = p } label: {
                         HStack(spacing: 8) {
                             Image(systemName: p.symbol).frame(width: 18)
                             Text(p.rawValue)
@@ -60,8 +68,8 @@ struct SettingsView: View {
                         }
                         .padding(.horizontal, 10).padding(.vertical, 7)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(sel.v == p ? Color.accentColor.opacity(0.9) : Color.clear))
-                        .foregroundStyle(sel.v == p ? Color.white : Color.primary)
+                            .fill(nav.pane == p ? Color.accentColor.opacity(0.9) : Color.clear))
+                        .foregroundStyle(nav.pane == p ? Color.white : Color.primary)
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
@@ -72,7 +80,7 @@ struct SettingsView: View {
             .frame(width: 190)
             .background(.ultraThinMaterial)
             Group {
-                switch sel.v {
+                switch nav.pane {
                 case .general: GeneralPane()
                 case .appearance: AppearancePane()
                 case .behavior: BehaviorPane()
@@ -80,6 +88,8 @@ struct SettingsView: View {
                 case .alerts: AlertsPane()
                 case .media: MediaPane()
                 case .timer: TimerPane()
+                case .controls: ControlsPane()
+                case .shortcuts: ShortcutsPane()
                 case .power: PowerPane()
                 case .privacy: PrivacyPane()
                 case .about: AboutPane()
@@ -182,7 +192,7 @@ struct AppearancePane: View {
             }
             Section("Size & shape") {
                 SliderRow(title: "Panel width", value: $panelWidth, range: 420...900, step: 10, unit: " pt")
-                SliderRow(title: "Panel height", value: $bodyHeight, range: 100...280, step: 10, unit: " pt")
+                SliderRow(title: "Panel height", value: $bodyHeight, range: 120...280, step: 10, unit: " pt")
                 SliderRow(title: "Corner radius", value: $cornerRadius, range: 12...44, step: 1, unit: " pt")
                 SliderRow(title: "Side ears (live activity)", value: $earWidth, range: 30...80, step: 1, unit: " pt")
             }
@@ -231,37 +241,25 @@ struct TabsPane: View {
     @AppStorage("homeSide") var homeSide = "calendar"
     @AppStorage("sideWidth") var sideWidth = 210.0
     @StateObject private var order = Box<[NotchTab]>(NotchTab.ordered)
-    @AppStorage("tab_tray") var tray = true
-    @AppStorage("tab_clipboard") var clip = true
-    @AppStorage("tab_notes") var notes = true
-    @AppStorage("tab_calendar") var cal = true
-    @AppStorage("tab_reminders") var rem = true
-    @AppStorage("tab_timer") var timer = true
-    @AppStorage("tab_stats") var stats = true
-    @AppStorage("tab_mirror") var mirror = true
-    @AppStorage("tab_apps") var apps = true
     @AppStorage("clipLimit") var clipLimit = 25.0
     @AppStorage("remindersAll") var remindersAll = false
     var body: some View {
         Form {
-            Section("Tabs") {
-                Toggle("Shelf / Tray + AirDrop", isOn: $tray)
-                Toggle("Clipboard history", isOn: $clip)
-                Toggle("Notes", isOn: $notes)
-                Toggle("Calendar", isOn: $cal)
-                Toggle("Reminders", isOn: $rem)
-                Toggle("Timer, stopwatch & focus", isOn: $timer)
-                Toggle("System stats", isOn: $stats)
-                Toggle("Mirror (camera)", isOn: $mirror)
-                Toggle("App launcher", isOn: $apps)
-            }
-            Section("Order — drag to rearrange (you can also drag icons in the notch)") {
+            Section("Tabs — drag to reorder, switch off what you don't use (you can also drag icons in the notch)") {
                 List {
                     ForEach(order.v) { t in
                         HStack(spacing: 10) {
                             Image(systemName: "line.3.horizontal").foregroundStyle(.secondary)
                             Image(systemName: t.symbol).frame(width: 20)
-                            Text(t.title)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(t.title)
+                                Text(t.blurb).font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if t != .home {
+                                Toggle("", isOn: Binding(get: { t.isOn }, set: { UserDefaults.standard.set($0, forKey: "tab_\(t.rawValue)"); order.v = order.v }))
+                                    .labelsHidden().toggleStyle(.switch)
+                            }
                         }
                     }
                     .onMove { from, to in
@@ -271,13 +269,14 @@ struct TabsPane: View {
                         NotchTab.saveOrder(o)
                     }
                 }
-                .frame(height: 300)
+                .frame(height: 380)
             }
             Section("Home") {
                 Picker("Widget beside the player", selection: $homeSide) {
                     Text("Calendar").tag("calendar")
                     Text("Reminders").tag("reminders")
                     Text("System stats").tag("stats")
+                    Text("Weather").tag("weather")
                     Text("None").tag("none")
                 }
                 SliderRow(title: "Widget width", value: $sideWidth, range: 150...300, step: 10, unit: " pt")
@@ -287,6 +286,63 @@ struct TabsPane: View {
                 Toggle("Show all open reminders (not just today)", isOn: $remindersAll)
             }
         }
+    }
+}
+
+struct ControlsPane: View {
+    @AppStorage("focusShortcut") var focus = ""
+    var body: some View {
+        Form {
+            Section("Do Not Disturb") {
+                TextField("Name of your Shortcut", text: $focus, prompt: Text("e.g. Toggle Focus"))
+                Text("macOS has no public API for Focus. Create a Shortcut in the Shortcuts app (action: Set Focus) and type its name here; the Do Not Disturb tile will run it. Leave empty to open Focus settings instead.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Dark Mode & Mute") {
+                Text("These use AppleScript. macOS asks once whether Notchly may control System Events.").font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+}
+
+struct ShortcutsPane: View {
+    @ObservedObject var store = ShortcutStore.shared
+    var body: some View {
+        Form {
+            Section("Your shortcuts — shown in the Controls tab") {
+                if store.items.isEmpty { Text("No shortcuts yet.").foregroundStyle(.secondary) }
+                ForEach($store.items) { $s in
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 8) {
+                            Image(systemName: s.symbol).frame(width: 22)
+                            TextField("Name", text: $s.name, prompt: Text("Name")).labelsHidden()
+                            Picker("", selection: $s.kind) { ForEach(ShortcutKind.allCases) { Text($0.rawValue).tag($0) } }
+                                .labelsHidden().frame(width: 130)
+                            Button { store.run(s) } label: { Image(systemName: "play.fill") }.help("Test")
+                            Button(role: .destructive) { store.items.removeAll { $0.id == s.id } } label: { Image(systemName: "trash") }
+                        }
+                        HStack(spacing: 8) {
+                            TextField("SF Symbol", text: $s.symbol, prompt: Text("SF Symbol name")).labelsHidden().frame(width: 150)
+                            TextField(s.kind.hint, text: $s.target, prompt: Text(s.kind.hint)).labelsHidden()
+                            if s.kind == .app {
+                                Button("Choose…") {
+                                    let op = NSOpenPanel(); op.allowedContentTypes = [.application, .item]
+                                    if op.runModal() == .OK, let u = op.url { s.target = u.path; if s.name == "New shortcut" { s.name = u.deletingPathExtension().lastPathComponent } }
+                                }
+                            }
+                        }
+                        .font(.callout)
+                    }
+                    .padding(.vertical, 4)
+                }
+                Button { store.items.append(CustomShortcut()) } label: { Label("Add shortcut", systemImage: "plus") }
+            }
+            Section {
+                Text("Shell commands run as you, with your permissions, only when you press the tile. Only add commands you understand.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: store.items) { _, _ in store.save() }
     }
 }
 
@@ -400,6 +456,9 @@ struct PowerPane: View {
 
 struct PrivacyPane: View {
     @AppStorage("allowNetwork") var net = true
+    @AppStorage("weatherEnabled") var weather = false
+    @AppStorage("weatherCity") var city = ""
+    @AppStorage("weatherUnit") var unit = 0
     var body: some View {
         Form {
             Section("Network") {
@@ -407,8 +466,15 @@ struct PrivacyPane: View {
                 Text("Nothing else ever leaves your Mac. There is no analytics, no tracking and no account.")
                     .font(.caption).foregroundStyle(.secondary)
             }
+            Section("Weather (off by default)") {
+                Toggle("Show weather (open-meteo.com — sends only your city name)", isOn: $weather).disabled(!net)
+                TextField("City", text: $city, prompt: Text("e.g. Cupertino")).disabled(!weather || !net)
+                Picker("Units", selection: $unit) { Text("°C").tag(0); Text("°F").tag(1) }.pickerStyle(.segmented).disabled(!weather || !net)
+                Text("Open-Meteo needs no account or key. Your city is sent once to look up coordinates, then coordinates are sent to get the forecast. Nothing else, and never your location from the system.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
             Section("What Notchly can see, and why") {
-                Text("• Calendar & Reminders — shown in the notch only; never copied anywhere.\n• Camera — only while the Mirror tab is open.\n• Spotify / Music (Apple Events) — track info and play controls.\n• Now Playing (system) — title, artist and artwork of what is playing.\n• Clipboard — kept in memory only, cleared when you quit; never saved to disk.\n• Downloads folder — only to notice a finished download (optional).")
+                Text("• Calendar & Reminders — shown in the notch only; never copied anywhere.\n• Camera — only while the Mirror tab is open.\n• Spotify / Music (Apple Events) — track info and play controls.\n• Now Playing (system) — title, artist and artwork of what is playing.\n• Clipboard — kept in memory only and cleared when you quit. Only snippets you pin are saved on this Mac. Items flagged as secret by password managers are skipped.\n• Downloads folder — only to notice a finished download (optional).")
                     .font(.callout)
                 Text("Revoke any of these anytime in System Settings → Privacy & Security.").font(.caption).foregroundStyle(.secondary)
             }

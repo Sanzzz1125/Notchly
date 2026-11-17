@@ -1,212 +1,70 @@
 import SwiftUI
 import AppKit
-import EventKit
 import UniformTypeIdentifiers
 
-private func fmt(_ s: Double) -> String {
-    let v = Int(max(0, s))
-    return String(format: "%d:%02d", v / 60, v % 60)
-}
+// MARK: Shared
 
-private struct Empty: View {
+struct AccessPrompt: View {
     let symbol: String
-    let text: String
+    let what: String
+    let access: Access
+    let pane: String
+    let request: () -> Void
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 22)).foregroundStyle(Color.white.opacity(0.35))
-            Text(text).font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.5))
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-// MARK: Home
-struct HomeTab: View {
-    @AppStorage("homeSide") var side = "calendar"
-    @AppStorage("sideWidth") var sideW = 210.0
-    var body: some View {
-        GeometryReader { g in
-            let showSide = side != "none" && g.size.width > 520
-            let w = min(CGFloat(sideW), g.size.width * 0.38)
-            HStack(spacing: 12) {
-                MediaCard()
-                if showSide { SideWidget(kind: side).frame(width: w) }
-            }
-            .frame(width: g.size.width, height: g.size.height)
+        EmptyState(symbol: symbol,
+                   title: access == .denied ? "\(what) access is off" : "Allow \(what.lowercased()) access",
+                   subtitle: access == .denied ? "Turn it on in System Settings → Privacy" : "Notchly only shows it here, nothing leaves your Mac",
+                   actionTitle: access == .denied ? "Open Settings" : "Allow") {
+            if access == .denied, let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)") { NSWorkspace.shared.open(u) }
+            else { request() }
         }
     }
 }
 
-struct MediaCard: View {
-    @ObservedObject var m = MediaController.shared
-    @StateObject private var drag = Box<Double?>(nil)
-
+/// Row with hover highlight used by lists.
+struct RowButton<Content: View>: View {
+    let action: () -> Void
+    @ViewBuilder let content: () -> Content
     var body: some View {
-        GeometryReader { g in
-            let art = max(56, min(112, g.size.height - 24))
-            let compact = g.size.height < 150
-            HStack(spacing: 14) {
-                artwork(art)
-                if m.hasTrack { info(compact) } else { idle }
-            }
-            .padding(12)
-            .frame(width: g.size.width, height: g.size.height)
-        }
-        .card()
-    }
-
-    func artwork(_ art: CGFloat) -> some View {
-        ZStack {
-            LinearGradient(colors: [m.tint.opacity(0.7), Color.black.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)
-            if let a = m.art {
-                Image(nsImage: a).resizable().scaledToFill()
-            } else {
-                Image(systemName: "music.note").font(.system(size: 34)).foregroundStyle(Color.white.opacity(0.7))
-            }
-        }
-        .frame(width: art, height: art)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .shadow(color: m.tint.opacity(m.hasTrack ? 0.55 : 0), radius: 14, y: 6)
-        .scaleEffect(m.isPlaying ? 1 : 0.94)
-        .animation(.spring(response: 0.4, dampingFraction: 0.7), value: m.isPlaying)
-    }
-
-    var idle: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Nothing playing").font(.system(size: 15, weight: .semibold))
-            Text("Play something in any app").font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.55))
-            HStack {
-                Button("Spotify") { NSWorkspace.shared.launchApplication("Spotify") }
-                Button("Music") { NSWorkspace.shared.launchApplication("Music") }
-            }.buttonStyle(.bordered).controlSize(.small)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    func info(_ compact: Bool) -> some View {
-        let frac = m.duration > 0 ? (drag.v ?? m.position / m.duration) : 0
-        return VStack(alignment: .leading, spacing: 4) {
-            Text(m.title).font(.system(size: 15, weight: .bold)).lineLimit(1)
-            if !(compact && !m.lyric.isEmpty) {
-                Text(m.artist).font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.6)).lineLimit(1)
-            }
-            if !m.lyric.isEmpty {
-                Text(m.lyric).font(.system(size: 11, weight: .medium)).foregroundStyle(m.tint).lineLimit(1)
-                    .transition(.opacity)
-            }
-            Spacer(minLength: 0)
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.18))
-                    Capsule().fill(m.tint).frame(width: max(0, g.size.width * CGFloat(min(1, max(0, frac)))))
-                }
-                .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0)
-                    .onChanged { v in drag.v = Double(max(0, min(1, v.location.x / g.size.width))) }
-                    .onEnded { v in
-                        m.seek(Double(max(0, min(1, v.location.x / g.size.width))))
-                        drag.v = nil
-                    })
-            }
-            .frame(height: 6)
-            if !compact {
-                HStack {
-                    Text(fmt(frac * m.duration)).font(.system(size: 10)).monospacedDigit()
-                    Spacer()
-                    Text(fmt(m.duration)).font(.system(size: 10)).monospacedDigit()
-                }
-                .foregroundStyle(Color.white.opacity(0.5))
-            }
-            HStack(spacing: 26) {
-                Spacer()
-                Button { m.previous() } label: { Image(systemName: "backward.fill").font(.system(size: 16)) }
-                Button { m.playPause() } label: { Image(systemName: m.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 22)) }
-                Button { m.next() } label: { Image(systemName: "forward.fill").font(.system(size: 16)) }
-                Spacer()
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity)
-    }
-}
-
-struct SideWidget: View {
-    let kind: String
-    var body: some View {
-        Group {
-            switch kind {
-            case "reminders": RemindersList(limit: 4)
-            case "stats": StatsMini()
-            default: CalendarList(limit: 5, soon: true)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .card()
-    }
-}
-
-struct StatsMini: View {
-    @ObservedObject var st = StatsService.shared
-    @ObservedObject var bat = BatteryService.shared
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            bar("CPU", st.cpu, .green)
-            bar("Memory", st.mem, .orange)
-            bar("Disk", st.disk, .blue)
-            if bat.hasBattery { bar("Battery", Double(bat.percent) / 100, bat.percent <= 20 ? .red : .green) }
-        }
-        .onAppear { st.sample() }
-    }
-    func bar(_ n: String, _ v: Double, _ c: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            HStack { Text(n); Spacer(); Text("\(Int(v * 100))%").monospacedDigit() }.font(.system(size: 10, weight: .medium))
-            GeometryReader { g in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.white.opacity(0.15))
-                    Capsule().fill(c).frame(width: g.size.width * CGFloat(min(1, max(0, v))))
-                }
-            }.frame(height: 4)
-        }
+        Button(action: action) { content().contentShape(Rectangle()) }
+            .buttonStyle(PressStyle(radius: DS.Radius.s, scale: 0.985))
     }
 }
 
 // MARK: Calendar
+
 struct CalendarList: View {
     @ObservedObject var cal = CalendarService.shared
     var limit: Int = 50
     var soon: Bool = false
-    private func label(_ ev: EKEvent) -> String {
-        if ev.isAllDay { return "All day" }
-        let t = ev.startDate.formatted(date: .omitted, time: .shortened)
-        if !soon { return t }
+    private func label(_ ev: CalEvent) -> String {
+        if ev.allDay { return soon ? "All day" : "All day" }
+        let t = ev.start.formatted(date: .omitted, time: .shortened)
+        if !soon { return t + " – " + ev.end.formatted(date: .omitted, time: .shortened) }
         let c = Calendar.current
-        if c.isDateInToday(ev.startDate) { return "Today · " + t }
-        if c.isDateInTomorrow(ev.startDate) { return "Tomorrow · " + t }
-        return ev.startDate.formatted(.dateTime.weekday(.abbreviated)) + " · " + t
+        if c.isDateInToday(ev.start) { return t }
+        if c.isDateInTomorrow(ev.start) { return "Tomorrow · " + t }
+        return ev.start.formatted(.dateTime.weekday(.abbreviated)) + " · " + t
     }
     var body: some View {
         let list = soon ? cal.upcomingList : cal.events
         if !cal.authorized {
-            VStack(spacing: 8) {
-                Image(systemName: "calendar.badge.exclamationmark").font(.system(size: 22)).foregroundStyle(Color.white.opacity(0.4))
-                Text("Calendar access needed").font(.system(size: 12)).foregroundStyle(Color.white.opacity(0.6))
-                Button("Open Settings") {
-                    if let u = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") { NSWorkspace.shared.open(u) }
-                }.buttonStyle(.bordered).controlSize(.small)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            AccessPrompt(symbol: "calendar.badge.exclamationmark", what: "Calendar", access: cal.access, pane: "Privacy_Calendars") { cal.requestAccess() }
         } else if list.isEmpty {
-            Empty(symbol: "calendar", text: soon ? "Nothing coming up" : "No events")
+            EmptyState(symbol: "calendar", title: soon ? "Nothing coming up" : "No events")
         } else {
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 8) {
-                    ForEach(Array(list.prefix(limit)), id: \.self) { ev in
-                        HStack(spacing: 8) {
-                            Capsule().fill(Color(nsColor: ev.calendar.color)).frame(width: 3, height: 30)
+                VStack(alignment: .leading, spacing: DS.Space.s) {
+                    ForEach(Array(list.prefix(limit))) { ev in
+                        let live = ev.start <= Date() && ev.end > Date() && !ev.allDay
+                        HStack(spacing: DS.Space.s) {
+                            Capsule().fill(ev.color).frame(width: 3, height: 28)
                             VStack(alignment: .leading, spacing: 1) {
-                                Text(ev.title ?? "Event").font(.system(size: 12, weight: .semibold)).lineLimit(1)
-                                Text(label(ev)).font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.55)).lineLimit(1)
+                                Text(ev.title).font(DS.Typo.bodyEm).lineLimit(1)
+                                HStack(spacing: 4) {
+                                    if live { Text("NOW").font(DS.Typo.micro).foregroundStyle(ev.color) }
+                                    Text(label(ev)).font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary).lineLimit(1)
+                                }
                             }
                             Spacer(minLength: 0)
                         }
@@ -214,6 +72,7 @@ struct CalendarList: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .edgeFade()
         }
     }
 }
@@ -225,46 +84,50 @@ struct CalendarTab: View {
         let t = c.startOfDay(for: Date())
         return (0..<7).compactMap { c.date(byAdding: .day, value: $0, to: t) }
     }
+    @Namespace private var ns
     var body: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 6) {
+        VStack(spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.xs) {
                 ForEach(days, id: \.self) { d in
                     let sel = Calendar.current.isDate(d, inSameDayAs: cal.day)
-                    Button { cal.select(d) } label: {
+                    let busy = cal.busyDays.contains(Calendar.current.startOfDay(for: d))
+                    Button { withAnimation(Motion.tab) { cal.select(d) } } label: {
                         VStack(spacing: 1) {
-                            Text(d.formatted(.dateTime.weekday(.abbreviated))).font(.system(size: 9, weight: .medium))
-                            Text(d.formatted(.dateTime.day())).font(.system(size: 14, weight: .bold))
+                            Text(d.formatted(.dateTime.weekday(.abbreviated))).font(DS.Typo.micro)
+                                .foregroundStyle(sel ? Color.white.opacity(0.85) : DS.Ink.secondary)
+                            Text(d.formatted(.dateTime.day())).font(.system(size: 15, weight: .bold, design: .rounded))
+                            Circle().fill(busy ? (sel ? Color.white : P.accent) : Color.clear).frame(width: 4, height: 4)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 5)
-                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(sel ? P.accent : Color.white.opacity(0.07)))
-                    }.buttonStyle(.plain)
+                        .background {
+                            if sel { RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(P.accent).matchedGeometryEffect(id: "day", in: ns) }
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.94, fill: !sel))
                 }
             }
-            CalendarList().padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
+            CalendarList().padding(DS.Space.m).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
         }
     }
 }
 
 // MARK: Reminders
+
 struct RemindersList: View {
     @ObservedObject var svc = ReminderService.shared
     var limit: Int = 50
+    var compact = false
     var body: some View {
         if !svc.authorized {
-            Empty(symbol: "checklist", text: "Allow Reminders access in System Settings")
+            AccessPrompt(symbol: "checklist", what: "Reminders", access: svc.access, pane: "Privacy_Reminders") { svc.requestAccess() }
         } else if svc.items.isEmpty {
-            Empty(symbol: "checkmark.circle", text: "All done")
+            EmptyState(symbol: "checkmark.circle", title: "All done")
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 7) {
-                    ForEach(Array(svc.items.prefix(limit)), id: \.self) { r in
-                        HStack(spacing: 8) {
-                            Button { svc.complete(r) } label: {
-                                Image(systemName: "circle").font(.system(size: 15)).foregroundStyle(P.accent)
-                            }.buttonStyle(.plain)
-                            Text(r.title ?? "").font(.system(size: 12)).lineLimit(1)
-                            Spacer(minLength: 0)
-                        }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: compact ? 6 : 4) {
+                    ForEach(Array(svc.items.prefix(limit))) { r in
+                        ReminderRow(item: r, compact: compact)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -273,162 +136,317 @@ struct RemindersList: View {
     }
 }
 
+struct ReminderRow: View {
+    let item: ReminderItem
+    let compact: Bool
+    @ObservedObject var svc = ReminderService.shared
+    @StateObject private var done = Box<Bool>(false)
+    var body: some View {
+        HStack(spacing: DS.Space.s) {
+            Button {
+                withAnimation(DS.press) { done.v = true }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { svc.complete(item) }
+            } label: {
+                Image(systemName: done.v ? "checkmark.circle.fill" : "circle").font(.system(size: 16))
+                    .foregroundStyle(done.v ? Color.green : P.accent)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .buttonStyle(PressStyle(radius: 9, scale: 0.85, fill: false))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(item.title).font(DS.Typo.body).lineLimit(1)
+                    .strikethrough(done.v).foregroundStyle(done.v ? DS.Ink.tertiary : DS.Ink.primary)
+                if !compact, let d = item.due {
+                    Text(d.formatted(date: .omitted, time: .shortened)).font(DS.Typo.micro).foregroundStyle(DS.Ink.tertiary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
+}
+
 struct RemindersTab: View {
     @ObservedObject var svc = ReminderService.shared
     @StateObject private var text = Box<String>("")
     var body: some View {
-        VStack(spacing: 8) {
-            HStack {
-                Image(systemName: "plus.circle.fill").foregroundStyle(P.accent)
-                TextField("Add a reminder", text: $text.v)
-                    .textFieldStyle(.plain)
-                    .onSubmit { svc.add(text.v); text.v = "" }
+        VStack(spacing: DS.Space.s) {
+            if svc.authorized {
+                DSField(placeholder: "Add a reminder", text: $text.v, symbol: "plus") {
+                    svc.add(text.v); text.v = ""
+                }
             }
-            .padding(9).card(12)
-            RemindersList().padding(10).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
+            RemindersList().padding(DS.Space.m).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
         }
     }
 }
 
 // MARK: Clipboard
+
 struct ClipboardTab: View {
     @ObservedObject var cb = ClipboardStore.shared
-    @StateObject private var flash = Box<String?>(nil)
+    @StateObject private var query = Box<String>("")
+    @StateObject private var flash = Box<UUID?>(nil)
+
+    var shown: [ClipItem] {
+        let q = query.v.trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? cb.items : cb.items.filter { $0.text.localizedCaseInsensitiveContains(q) }
+    }
+
     var body: some View {
-        VStack(spacing: 6) {
-            HStack {
-                Text("\(cb.items.count) copied").font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.5))
-                Spacer()
-                Button("Clear") { cb.clear() }.buttonStyle(.plain).font(.system(size: 11)).foregroundStyle(P.accent)
+        VStack(spacing: DS.Space.s) {
+            HStack(spacing: DS.Space.s) {
+                DSField(placeholder: "Search clipboard", text: $query.v, symbol: "magnifyingglass")
+                Chip(title: "Clear", symbol: "trash") { cb.clear() }
             }
             if cb.items.isEmpty {
-                Empty(symbol: "doc.on.clipboard", text: "Copy something and it shows up here")
+                EmptyState(symbol: "doc.on.clipboard", title: "Nothing copied yet", subtitle: "Copy something and it shows up here")
+            } else if shown.isEmpty {
+                EmptyState(symbol: "magnifyingglass", title: "No matches")
             } else {
-                ScrollView {
-                    VStack(spacing: 5) {
-                        ForEach(cb.items, id: \.self) { s in
-                            Button {
-                                cb.copy(s); flash.v = s
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 1) { if flash.v == s { flash.v = nil } }
-                            } label: {
-                                HStack {
-                                    Text(s).font(.system(size: 12)).lineLimit(2).multilineTextAlignment(.leading)
-                                    Spacer(minLength: 6)
-                                    Image(systemName: flash.v == s ? "checkmark" : "doc.on.doc")
-                                        .foregroundStyle(flash.v == s ? Color.green : Color.white.opacity(0.4))
-                                }
-                                .padding(.horizontal, 10).padding(.vertical, 7)
-                                .frame(maxWidth: .infinity)
-                                .card(10)
-                            }
-                            .buttonStyle(.plain)
-                            .contextMenu { Button("Remove") { cb.remove(s) } }
-                        }
+                ScrollView(showsIndicators: false) {
+                    LazyVStack(spacing: 4) {
+                        ForEach(shown) { it in ClipRow(item: it, flash: flash) }
                     }
+                    .padding(.vertical, 2)
                 }
+                .edgeFade()
             }
         }
+    }
+}
+
+struct ClipRow: View {
+    let item: ClipItem
+    @ObservedObject var flash: Box<UUID?>
+    @ObservedObject var cb = ClipboardStore.shared
+    @StateObject private var hover = Box<Bool>(false)
+
+    var body: some View {
+        let copied = flash.v == item.id
+        HStack(spacing: DS.Space.s) {
+            Image(systemName: item.pinned ? "pin.fill" : (item.isLink ? "link" : "text.alignleft"))
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(item.pinned ? P.accent : DS.Ink.tertiary).frame(width: 14)
+            Text(item.text).font(DS.Typo.body).lineLimit(1).truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if hover.v && !copied {
+                IconButton(symbol: item.pinned ? "pin.slash" : "pin", size: 24, icon: 10, help: item.pinned ? "Unpin" : "Pin") { cb.togglePin(item) }
+                IconButton(symbol: "xmark", size: 24, icon: 9, help: "Remove") { cb.remove(item) }
+            } else if copied {
+                Label("Copied", systemImage: "checkmark").font(DS.Typo.micro).foregroundStyle(Color.green)
+            } else if !item.app.isEmpty {
+                Text(item.app).font(DS.Typo.micro).foregroundStyle(DS.Ink.tertiary)
+            }
+        }
+        .padding(.horizontal, 10).frame(height: 34)
+        .background(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(hover.v ? DS.Fill.hover : DS.Fill.base))
+        .contentShape(Rectangle())
+        .onTapGesture {
+            cb.copy(item.text)
+            withAnimation(DS.press) { flash.v = item.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { if flash.v == item.id { withAnimation { flash.v = nil } } }
+        }
+        .onHover { h in withAnimation(DS.hoverAnim) { hover.v = h } }
+        .contextMenu {
+            Button(item.pinned ? "Unpin" : "Pin") { cb.togglePin(item) }
+            Button("Remove") { cb.remove(item) }
+        }
+        .transition(.opacity.combined(with: .scale(scale: 0.96)))
     }
 }
 
 // MARK: Notes
+
 struct NotesTab: View {
-    @AppStorage("notes") var notes = ""
+    @ObservedObject var store = NotesStore.shared
     var body: some View {
-        TextEditor(text: $notes)
-            .scrollContentBackground(.hidden)
-            .font(.system(size: 13))
-            .padding(8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .card()
+        GeometryReader { g in
+            let wide = g.size.width > 470
+            HStack(spacing: DS.Space.s) {
+                if wide {
+                    VStack(spacing: DS.Space.xs) {
+                        Chip(title: "New note", symbol: "plus", prominent: true) { store.add() }
+                        ScrollView(showsIndicators: false) {
+                            VStack(spacing: 3) {
+                                ForEach(store.notes) { n in noteRow(n) }
+                            }
+                        }
+                    }
+                    .frame(width: 150)
+                }
+                VStack(spacing: 0) {
+                    if !wide {
+                        HStack {
+                            Menu {
+                                ForEach(store.notes) { n in Button(n.title) { store.current = n.id } }
+                            } label: { Text(store.selected?.title ?? "Notes").font(DS.Typo.bodyEm) }
+                                .menuStyle(.borderlessButton).fixedSize()
+                            Spacer()
+                            IconButton(symbol: "plus", size: 24, icon: 11) { store.add() }
+                        }
+                        .padding(.horizontal, DS.Space.m).padding(.top, 6)
+                    }
+                    if let id = store.current {
+                        TextEditor(text: store.binding(id))
+                            .scrollContentBackground(.hidden).font(.system(size: 13))
+                            .padding(DS.Space.s)
+                            .id(id)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .card()
+                .overlay(alignment: .topTrailing) {
+                    if wide, let id = store.current {
+                        IconButton(symbol: "trash", size: 24, icon: 10, tint: DS.Ink.tertiary, help: "Delete note") { store.delete(id) }
+                            .padding(6)
+                    }
+                }
+            }
+            .frame(width: g.size.width, height: g.size.height)
+        }
+    }
+    func noteRow(_ n: Note) -> some View {
+        let sel = n.id == store.current
+        return Button { withAnimation(Motion.tab) { store.current = n.id } } label: {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(n.title).font(DS.Typo.bodyEm).lineLimit(1)
+                Text(n.updated.formatted(.relative(presentation: .named))).font(DS.Typo.micro).foregroundStyle(DS.Ink.tertiary)
+            }
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: DS.Radius.s, style: .continuous).fill(sel ? P.accent.opacity(0.28) : Color.clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle(radius: DS.Radius.s, scale: 0.98, fill: !sel))
     }
 }
 
 // MARK: Timer
+
 struct TimerTab: View {
     @ObservedObject var t = TimerStore.shared
     var body: some View {
         GeometryReader { g in
-            let ring = max(70, min(132, g.size.height - 24))
-            content(ring).frame(width: g.size.width, height: g.size.height)
+            let ring = max(70, min(128, g.size.height - 2 * DS.Space.m))
+            content(ring, g.size.width).frame(width: g.size.width, height: g.size.height)
         }
         .card()
     }
 
-    func content(_ ring: CGFloat) -> some View {
-        HStack(spacing: 18) {
+    func content(_ ring: CGFloat, _ width: CGFloat) -> some View {
+        HStack(spacing: DS.Space.xl) {
             ZStack {
-                Circle().stroke(Color.white.opacity(0.12), lineWidth: 8)
+                Circle().stroke(Color.white.opacity(0.1), lineWidth: 8)
                 Circle().trim(from: 0, to: CGFloat(t.mode == .stopwatch ? (t.elapsed.truncatingRemainder(dividingBy: 60)) / 60 : t.progress))
                     .stroke(t.onBreak ? Color.green : P.accent, style: StrokeStyle(lineWidth: 8, lineCap: .round))
                     .rotationEffect(.degrees(-90))
+                    .animation(.linear(duration: 0.12), value: t.progress)
                 VStack(spacing: 0) {
-                    Text(t.display).font(.system(size: 24, weight: .bold, design: .rounded)).monospacedDigit()
-                    if t.mode == .focus { Text(t.onBreak ? "Break" : "Focus").font(.system(size: 10)).foregroundStyle(Color.white.opacity(0.6)) }
+                    Text(t.display).font(.system(size: ring > 100 ? 24 : 18, weight: .bold, design: .rounded)).monospacedDigit()
+                    if t.mode == .focus { Text(t.onBreak ? "Break" : "Focus").font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary) }
                 }
             }
             .frame(width: ring, height: ring)
-            VStack(alignment: .leading, spacing: 10) {
-                Picker("", selection: Binding(get: { t.mode }, set: { t.setMode($0) })) {
-                    ForEach(TimerMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden()
+            VStack(alignment: .leading, spacing: DS.Space.m) {
+                Segmented(items: TimerMode.allCases.map { ($0, $0.rawValue) }, selection: Binding(get: { t.mode }, set: { t.setMode($0) }))
+                    .frame(maxWidth: 280)
                 if t.mode == .timer {
-                    HStack(spacing: 6) {
-                        ForEach([1, 5, 10, 15, 25, 45], id: \.self) { m in
-                            Button("\(m)m") { t.setMinutes(Double(m)) }
-                                .buttonStyle(.bordered).controlSize(.small)
+                    HStack(spacing: DS.Space.xs) {
+                        ForEach(width > 540 ? [1, 5, 10, 15, 25, 45] : [5, 10, 25, 45], id: \.self) { m in
+                            Chip(title: "\(m)m", prominent: Int(t.total / 60) == m) { t.setMinutes(Double(m)) }
                         }
                     }
                 }
-                HStack(spacing: 10) {
-                    Button { t.toggle() } label: {
-                        Label(t.running ? "Pause" : "Start", systemImage: t.running ? "pause.fill" : "play.fill")
-                            .frame(width: 80)
-                    }
-                    .buttonStyle(.borderedProminent).tint(P.accent)
-                    Button { t.reset() } label: { Label("Reset", systemImage: "arrow.counterclockwise") }
-                        .buttonStyle(.bordered)
+                HStack(spacing: DS.Space.s) {
+                    Chip(title: t.running ? "Pause" : "Start", symbol: t.running ? "pause.fill" : "play.fill", prominent: true) { t.toggle() }
+                    Chip(title: "Reset", symbol: "arrow.counterclockwise") { t.reset() }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
+        .padding(DS.Space.m)
     }
 }
 
 // MARK: Stats
+
 struct Ring: View {
     let label: String
     let value: Double
     let color: Color
     var size: CGFloat = 92
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: DS.Space.xs) {
             ZStack {
-                Circle().stroke(Color.white.opacity(0.12), lineWidth: 9)
+                Circle().stroke(Color.white.opacity(0.1), lineWidth: size > 70 ? 9 : 7)
                 Circle().trim(from: 0, to: CGFloat(min(1, max(0, value))))
-                    .stroke(color, style: StrokeStyle(lineWidth: 9, lineCap: .round))
+                    .stroke(color, style: StrokeStyle(lineWidth: size > 70 ? 9 : 7, lineCap: .round))
                     .rotationEffect(.degrees(-90))
                     .animation(.easeOut(duration: 0.5), value: value)
-                Text("\(Int(value * 100))%").font(.system(size: 15, weight: .bold, design: .rounded)).monospacedDigit()
+                Text("\(Int(value * 100))%").font(.system(size: size > 70 ? 15 : 12, weight: .bold, design: .rounded)).monospacedDigit()
             }
             .frame(width: size, height: size)
-            Text(label).font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.6))
+            Text(label).font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary).lineLimit(1).fixedSize()
+        }
+        .frame(minWidth: size)
+    }
+}
+
+struct Sparkline: View {
+    let values: [Double]
+    let tint: Color
+    var body: some View {
+        GeometryReader { g in
+            let pts = values.enumerated().map { (i, v) in
+                CGPoint(x: g.size.width * CGFloat(i) / CGFloat(max(1, values.count - 1)), y: g.size.height * (1 - CGFloat(min(1, max(0, v)))))
+            }
+            ZStack {
+                Path { p in
+                    guard let f = pts.first else { return }
+                    p.move(to: CGPoint(x: f.x, y: g.size.height)); p.addLine(to: f)
+                    for q in pts.dropFirst() { p.addLine(to: q) }
+                    p.addLine(to: CGPoint(x: pts.last!.x, y: g.size.height)); p.closeSubpath()
+                }.fill(LinearGradient(colors: [tint.opacity(0.35), tint.opacity(0)], startPoint: .top, endPoint: .bottom))
+                Path { p in
+                    guard let f = pts.first else { return }
+                    p.move(to: f)
+                    for q in pts.dropFirst() { p.addLine(to: q) }
+                }.stroke(tint, style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+            }
         }
     }
 }
 
 struct StatsTab: View {
     @ObservedObject var st = StatsService.shared
+    @ObservedObject var bat = BatteryService.shared
     var body: some View {
         GeometryReader { g in
-            let sz = max(56, min(92, g.size.height - 50))
-            HStack(spacing: 34) {
-                Ring(label: "CPU", value: st.cpu, color: .green, size: sz)
-                Ring(label: "Memory", value: st.mem, color: .orange, size: sz)
-                Ring(label: "Disk", value: st.disk, color: .blue, size: sz)
+            let n = bat.hasBattery ? 4 : 3
+            let wide = g.size.width > 560
+            let gap = wide ? DS.Space.xl : DS.Space.m
+            let avail = (wide ? g.size.width * 0.6 : g.size.width) - 2 * DS.Space.m
+            let sz = max(48, min(88, g.size.height - 52, (avail - gap * CGFloat(n - 1)) / CGFloat(n)))
+            HStack(spacing: DS.Space.l) {
+                HStack(spacing: gap) {
+                    Ring(label: "CPU", value: st.cpu, color: .green, size: sz)
+                    Ring(label: "Memory", value: st.mem, color: .orange, size: sz)
+                    Ring(label: "Disk", value: st.disk, color: .blue, size: sz)
+                    if bat.hasBattery {
+                        Ring(label: bat.charging ? "Charging" : "Battery", value: Double(bat.percent) / 100,
+                             color: bat.percent <= 20 && !bat.plugged ? .red : .green, size: sz)
+                    }
+                }
+                .layoutPriority(1)
+                if wide {
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
+                        HStack { SectionLabel(text: "CPU · last minute"); Spacer(); Text("\(Int(st.cpu * 100))%").font(DS.Typo.digits).foregroundStyle(DS.Ink.secondary) }
+                        Sparkline(values: st.cpuHistory, tint: .green)
+                    }
+                    .padding(DS.Space.m).card(DS.Radius.m)
+                    .frame(height: sz + 22)
+                }
             }
+            .padding(.horizontal, DS.Space.m)
             .frame(width: g.size.width, height: g.size.height)
         }
         .card()
@@ -437,86 +455,196 @@ struct StatsTab: View {
 }
 
 // MARK: Mirror
+
 struct MirrorTab: View {
     var body: some View {
         CameraPreview()
-            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
             .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-// MARK: Tray
-struct DropZone: View {
-    let symbol: String
-    let title: String
-    let action: ([URL]) -> Void
-    @StateObject private var hot = Box<Bool>(false)
-    var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 20))
-            Text(title).font(.system(size: 11, weight: .medium))
-        }
-        .foregroundStyle(hot.v ? P.accent : Color.white.opacity(0.65))
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(hot.v ? P.accent.opacity(0.18) : Color.white.opacity(0.05)))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(hot.v ? P.accent : Color.white.opacity(0.25), style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])))
-        .scaleEffect(hot.v ? 1.03 : 1)
-        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: hot.v)
-        .onDrop(of: [UTType.fileURL], isTargeted: $hot.v) { providers in
-            loadFileURLs(providers, action)
-            return true
-        }
-    }
-}
-
 // MARK: Apps
+
 struct AppsTab: View {
     @AppStorage("launchApps") var raw = ""
     static let fallback = ["/System/Applications/Safari.app", "/System/Applications/Notes.app", "/System/Applications/Music.app",
                            "/System/Applications/Calendar.app", "/System/Applications/Utilities/Terminal.app",
                            "/System/Applications/System Settings.app"]
     var paths: [String] {
+        if Demo.on { return ["/System/Applications/Safari.app", "/System/Applications/Mail.app", "/System/Applications/Notes.app", "/System/Applications/Music.app", "/System/Applications/Calendar.app", "/System/Applications/Utilities/Terminal.app", "/System/Applications/System Settings.app"].filter { FileManager.default.fileExists(atPath: $0) } }
         if raw.isEmpty { return AppsTab.fallback.filter { FileManager.default.fileExists(atPath: $0) } }
         return raw.components(separatedBy: "\n").filter { !$0.isEmpty && $0 != "-" }
     }
     func save(_ p: [String]) { raw = p.isEmpty ? "-" : p.joined(separator: "\n") }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 76), spacing: 6)], spacing: 6) {
+        ScrollView(showsIndicators: false) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: DS.Space.xs)], spacing: DS.Space.xs) {
                 ForEach(paths, id: \.self) { p in
                     Button {
                         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: p), configuration: NSWorkspace.OpenConfiguration(), completionHandler: nil)
                         NotchState.shared.close()
                     } label: {
                         VStack(spacing: 4) {
-                            Image(nsImage: NSWorkspace.shared.icon(forFile: p)).resizable().frame(width: 52, height: 52)
+                            Image(nsImage: NSWorkspace.shared.icon(forFile: p)).resizable().frame(width: 46, height: 46)
                             Text(URL(fileURLWithPath: p).deletingPathExtension().lastPathComponent)
-                                .font(.system(size: 10)).lineLimit(1)
+                                .font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary).lineLimit(1)
                         }
-                        .frame(maxWidth: .infinity).padding(.vertical, 6).contentShape(Rectangle())
+                        .frame(maxWidth: .infinity).padding(.vertical, 7).contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.92))
                     .contextMenu { Button("Remove") { save(paths.filter { $0 != p }) } }
                 }
                 Button {
                     NSApp.activate(ignoringOtherApps: true)
                     let op = NSOpenPanel()
-                    op.allowedFileTypes = ["app"]
+                    op.allowedContentTypes = [.application]
                     op.directoryURL = URL(fileURLWithPath: "/Applications")
                     if op.runModal() == .OK, let u = op.url { save(paths + [u.path]) }
                 } label: {
                     VStack(spacing: 4) {
-                        Image(systemName: "plus.circle").font(.system(size: 30, weight: .light)).frame(width: 52, height: 52)
-                            .foregroundStyle(Color.white.opacity(0.6))
-                        Text("Add").font(.system(size: 10))
+                        Image(systemName: "plus").font(.system(size: 18, weight: .medium)).frame(width: 46, height: 46)
+                            .foregroundStyle(DS.Ink.secondary)
+                            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.white.opacity(0.18), style: StrokeStyle(lineWidth: 1.2, dash: [4, 3])))
+                        Text("Add").font(DS.Typo.caption).foregroundStyle(DS.Ink.tertiary)
                     }
-                    .frame(maxWidth: .infinity).padding(.vertical, 6).contentShape(Rectangle())
+                    .frame(maxWidth: .infinity).padding(.vertical, 7).contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.92))
             }
             .padding(2)
         }
+        .edgeFade()
+    }
+}
+
+// MARK: Controls (quick toggles + custom shortcuts)
+
+struct ControlTile: View {
+    let symbol: String
+    let title: String
+    let on: Bool
+    let tint: Color
+    let action: () -> Void
+    var body: some View {
+        GeometryReader { g in
+            let k = min(g.size.width, g.size.height)
+            let icon = min(30, max(17, k * 0.27))
+            Button(action: action) {
+                VStack(spacing: k > 90 ? 8 : 5) {
+                    Image(systemName: symbol).font(.system(size: icon, weight: .semibold))
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(title).font(.system(size: k > 90 ? 11.5 : 9.5, weight: .semibold)).lineLimit(2)
+                        .multilineTextAlignment(.center).minimumScaleFactor(0.85).padding(.horizontal, 3)
+                }
+                .foregroundStyle(on ? Color.white : DS.Ink.secondary)
+                .frame(width: g.size.width, height: g.size.height)
+                .background(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(on ? tint : DS.Fill.base))
+                .overlay(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).strokeBorder(on ? Color.white.opacity(0.2) : DS.Fill.stroke, lineWidth: 1))
+                .shadow(color: on ? tint.opacity(0.45) : .clear, radius: 8, y: 3)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.93, fill: !on))
+            .animation(DS.press, value: on)
+        }
+    }
+}
+
+struct ControlsTab: View {
+    @ObservedObject var q = QuickActions.shared
+    @ObservedObject var awake = KeepAwake.shared
+    @ObservedObject var shortcuts = ShortcutStore.shared
+    var body: some View {
+        GeometryReader { g in
+            let wide = g.size.width > 540
+            HStack(spacing: DS.Space.m) {
+                VStack(spacing: DS.Space.xs) {
+                    ForEach(0..<2, id: \.self) { row in
+                        HStack(spacing: DS.Space.xs) {
+                            ForEach(Array(QuickAction.allCases.dropFirst(row * 4).prefix(4))) { a in
+                                ControlTile(symbol: a.symbol(on: q.isOn(a)), title: a.title, on: q.isOn(a), tint: a.tint) { q.perform(a) }
+                            }
+                        }
+                    }
+                }
+                if wide {
+                    VStack(alignment: .leading, spacing: DS.Space.xs) {
+                        SectionLabel(text: "Shortcuts")
+                        if shortcuts.items.isEmpty {
+                            EmptyState(symbol: "bolt", title: "No shortcuts yet", subtitle: "Add apps, sites or commands", actionTitle: "Add in Settings") {
+                                SettingsWindow.show(.shortcuts)
+                            }
+                        } else {
+                            ScrollView(showsIndicators: false) {
+                                LazyVGrid(columns: [GridItem(.flexible(), spacing: DS.Space.xs), GridItem(.flexible(), spacing: DS.Space.xs)], spacing: DS.Space.xs) {
+                                    ForEach(shortcuts.items) { s in
+                                        Button { shortcuts.run(s) } label: {
+                                            HStack(spacing: 6) {
+                                                Image(systemName: s.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(P.accent).frame(width: 16)
+                                                Text(s.name).font(DS.Typo.caption).lineLimit(1)
+                                                Spacer(minLength: 0)
+                                            }
+                                            .padding(.horizontal, 9).frame(height: 34)
+                                            .background(RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(DS.Fill.base))
+                                            .contentShape(Rectangle())
+                                        }
+                                        .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.95))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: min(240, g.size.width * 0.38))
+                    .padding(DS.Space.m).card()
+                }
+            }
+            .frame(width: g.size.width, height: g.size.height)
+        }
+        .onAppear { q.refresh() }
+    }
+}
+
+// MARK: Weather
+
+struct WeatherTab: View {
+    @ObservedObject var w = WeatherService.shared
+    var body: some View {
+        Group {
+            if let n = w.now {
+                GeometryReader { g in
+                    HStack(spacing: DS.Space.xl) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 10) {
+                                Image(systemName: n.symbol).symbolRenderingMode(.multicolor).font(.system(size: 40))
+                                Text(w.formatted(n.temp)).font(.system(size: 46, weight: .semibold, design: .rounded))
+                            }
+                            Text(n.text).font(DS.Typo.headline)
+                            Text("\(n.city)  ·  H \(w.formatted(n.hi))  L \(w.formatted(n.lo))").font(DS.Typo.caption).foregroundStyle(DS.Ink.secondary)
+                        }
+                        if g.size.width > 440 {
+                            HStack(spacing: DS.Space.m) {
+                                ForEach(Array(n.hourly.prefix(g.size.width > 560 ? 6 : 4).enumerated()), id: \.offset) { _, h in
+                                    VStack(spacing: 5) {
+                                        Text(h.0.formatted(.dateTime.hour())).font(DS.Typo.micro).foregroundStyle(DS.Ink.tertiary)
+                                        Image(systemName: WeatherNow.symbol(h.2)).symbolRenderingMode(.multicolor).font(.system(size: 16))
+                                        Text(w.formatted(h.1)).font(DS.Typo.digits)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(DS.Space.m)
+                    .frame(width: g.size.width, height: g.size.height, alignment: .leading)
+                }
+            } else if !w.enabled {
+                EmptyState(symbol: "cloud.sun", title: "Weather is off", subtitle: "The only feature besides lyrics that uses the internet. Opt in and pick a city.",
+                           actionTitle: "Open Settings") { SettingsWindow.show(.privacy) }
+            } else {
+                EmptyState(symbol: "cloud.sun", title: w.status.isEmpty ? "Loading…" : w.status)
+            }
+        }
+        .card()
+        .onAppear { w.refreshIfNeeded() }
     }
 }

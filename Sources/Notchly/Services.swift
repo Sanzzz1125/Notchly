@@ -60,126 +60,6 @@ final class BatteryService: ObservableObject {
     }
 }
 
-// MARK: Calendar
-final class CalendarService: ObservableObject {
-    static let shared = CalendarService()
-    private let store = EKEventStore()
-    @Published var events: [EKEvent] = []
-    @Published var upcomingList: [EKEvent] = []
-    @Published var day = Date()
-    @Published var authorized = false
-    private var alerted = Set<String>()
-
-    func start() {
-        store.requestFullAccessToEvents { [weak self] ok, _ in
-            DispatchQueue.main.async { self?.authorized = ok; self?.refresh() }
-        }
-        NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in self?.refresh() }
-        let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in self?.upcoming(); self?.refresh() }
-        RunLoop.main.add(t, forMode: .common)
-    }
-    func select(_ d: Date) { day = d; refresh() }
-    func refresh() {
-        guard authorized else { return }
-        let cal = Calendar.current
-        let s = cal.startOfDay(for: day)
-        guard let e = cal.date(byAdding: .day, value: 1, to: s) else { return }
-        events = store.events(matching: store.predicateForEvents(withStart: s, end: e, calendars: nil))
-            .sorted { $0.startDate < $1.startDate }
-        let now = Date()
-        let week = cal.date(byAdding: .day, value: 7, to: now) ?? now
-        upcomingList = store.events(matching: store.predicateForEvents(withStart: now, end: week, calendars: nil))
-            .sorted { $0.startDate < $1.startDate }
-    }
-    private func upcoming() {
-        if Background.paused { return }
-        guard authorized, P.bool("calendarAlerts") else { return }
-        let now = Date()
-        let list = store.events(matching: store.predicateForEvents(withStart: now, end: now.addingTimeInterval(300), calendars: nil))
-        for ev in list where !ev.isAllDay {
-            let id = (ev.eventIdentifier ?? ev.title ?? "") + "\(ev.startDate.timeIntervalSince1970)"
-            if alerted.contains(id) { continue }
-            alerted.insert(id)
-            let mins = max(1, Int(ev.startDate.timeIntervalSinceNow / 60))
-            NotchState.shared.post(IslandAlert(symbol: "calendar", tint: Color(nsColor: ev.calendar.color),
-                                               title: ev.title ?? "Event", detail: "Starts in \(mins) min", duration: 5))
-        }
-    }
-}
-
-// MARK: Reminders
-final class ReminderService: ObservableObject {
-    static let shared = ReminderService()
-    private let store = EKEventStore()
-    @Published var items: [EKReminder] = []
-    @Published var authorized = false
-
-    func start() {
-        store.requestFullAccessToReminders { [weak self] ok, _ in
-            DispatchQueue.main.async { self?.authorized = ok; self?.refresh() }
-        }
-        NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in self?.refresh() }
-    }
-    func refresh() {
-        guard authorized else { return }
-        var end = Calendar.current.startOfDay(for: Date())
-        end = Calendar.current.date(byAdding: .day, value: 1, to: end) ?? end
-        let pred = P.bool("remindersAll")
-            ? store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: nil, calendars: nil)
-            : store.predicateForIncompleteReminders(withDueDateStarting: nil, ending: end, calendars: nil)
-        store.fetchReminders(matching: pred) { [weak self] rs in
-            DispatchQueue.main.async { self?.items = rs ?? [] }
-        }
-    }
-    func complete(_ r: EKReminder) {
-        r.isCompleted = true
-        try? store.save(r, commit: true)
-        refresh()
-    }
-    func add(_ title: String) {
-        let t = title.trimmingCharacters(in: .whitespaces)
-        if t.isEmpty { return }
-        let r = EKReminder(eventStore: store)
-        r.title = t
-        r.calendar = store.defaultCalendarForNewReminders()
-        try? store.save(r, commit: true)
-        refresh()
-    }
-}
-
-// MARK: Clipboard
-final class ClipboardStore: ObservableObject {
-    static let shared = ClipboardStore()
-    @Published var items: [String] = []
-    private var count = NSPasteboard.general.changeCount
-
-    func start() {
-        let t = Timer(timeInterval: 0.7, repeats: true) { [weak self] _ in self?.check() }
-        RunLoop.main.add(t, forMode: .common)
-    }
-    private var skip = 0
-    private func check() {
-        if Background.paused { return }
-        skip += 1
-        if Eco.on && skip % 3 != 0 { return }
-        let pb = NSPasteboard.general
-        if pb.changeCount == count { return }
-        count = pb.changeCount
-        guard let s = pb.string(forType: .string), !s.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        items.removeAll { $0 == s }
-        items.insert(s, at: 0)
-        let limit = max(5, Int(P.dbl("clipLimit")))
-        if items.count > limit { items = Array(items.prefix(limit)) }
-    }
-    func copy(_ s: String) {
-        let pb = NSPasteboard.general
-        pb.clearContents()
-        pb.setString(s, forType: .string)
-        count = pb.changeCount
-    }
-    func remove(_ s: String) { items.removeAll { $0 == s } }
-    func clear() { items = [] }
-}
 
 // MARK: Tray
 final class TrayStore: ObservableObject {
@@ -187,6 +67,17 @@ final class TrayStore: ObservableObject {
     @Published var files: [URL] = []
     @Published var selected = Set<URL>()
     var selectedFiles: [URL] { files.filter { selected.contains($0) } }
+    init() {
+        guard Demo.on else { return }
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Notchly Demo", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for n in ["Design brief.pdf", "Hero shot.png", "Budget.xlsx", "Release notes.md", "Moodboard.key", "Demo reel.mov"] {
+            let u = dir.appendingPathComponent(n)
+            if !FileManager.default.fileExists(atPath: u.path) { FileManager.default.createFile(atPath: u.path, contents: Data("demo".utf8)) }
+            files.append(u)
+        }
+        selected = Set(files.prefix(2))
+    }
     func add(_ urls: [URL]) {
         for u in urls where !files.contains(u) { files.append(u) }
     }
@@ -315,17 +206,31 @@ final class StatsService: ObservableObject {
     @Published var cpu: Double = 0
     @Published var mem: Double = 0
     @Published var disk: Double = 0
+    @Published var cpuHistory: [Double] = Array(repeating: 0, count: 30)
     private var prev: (Double, Double, Double, Double)?
 
     func start() {
         let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in
-            if !Background.paused && NotchState.shared.expanded && NotchState.shared.tab == .stats { self?.sample() }
+            if !Background.paused && NotchState.shared.expanded && (NotchState.shared.tab == .stats || NotchState.shared.tab == .home) { self?.sample() }
         }
+        t.tolerance = 0.5
         RunLoop.main.add(t, forMode: .common)
         sample()
     }
+    static func demoHistory() -> [Double] {
+        var out: [Double] = []
+        for i in 0..<30 {
+            let x = Double(i)
+            let a: Double = 0.15 * sin(x / 3.0)
+            let b: Double = 0.05 * sin(x * 1.7)
+            out.append(0.2 + a + b)
+        }
+        return out
+    }
     func sample() {
+        if Demo.on { cpu = 0.27; mem = 0.58; disk = 0.64; cpuHistory = StatsService.demoHistory(); return }
         cpu = readCPU(); mem = readMem(); disk = readDisk()
+        cpuHistory.append(cpu); if cpuHistory.count > 30 { cpuHistory.removeFirst(cpuHistory.count - 30) }
     }
     private func readCPU() -> Double {
         var size = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.stride / MemoryLayout<integer_t>.stride)
