@@ -21,7 +21,7 @@ enum P {
         "tab_tray": true, "tab_clipboard": true, "tab_notes": true, "tab_calendar": true,
         "tab_reminders": true, "tab_timer": true, "tab_stats": true, "tab_mirror": true, "tab_apps": true,
         "tab_controls": true, "tab_weather": false, "weatherEnabled": false, "weatherCity": "", "weatherUnit": 0,
-        "focusShortcut": "", "ecoCalmMotion": false, "motionSpeed": 1.0, "motionBounce": 0.5, "tabTransition": 0, "onboarded": false, "demoMode": false, "debugHooks": false,
+        "focusShortcut": "", "gestureDouble": "none", "gestureOption": "none", "ecoCalmMotion": false, "motionSpeed": 1.0, "motionBounce": 0.5, "tabTransition": 0, "onboarded": false, "demoMode": false, "debugHooks": false,
     ]
     static func register() {
         UserDefaults.standard.register(defaults: defaults)

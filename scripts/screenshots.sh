@@ -3,12 +3,13 @@
 #  - Runs build/Notchly.app with factory settings (in memory, -factoryDefaults) and sample data (demo mode),
 #    so none of your own calendar, clipboard or music appears and your real settings are untouched.
 #  - Captures only Notchly's own windows (screencapture -l), never the rest of the screen.
+# Raw captures go to build/shots/, then scripts/compose.py builds the presentation images in docs/.
 # Usage: ./build.sh && ./scripts/screenshots.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
 BIN="build/Notchly.app/Contents/MacOS/Notchly"
 [ -x "$BIN" ] || { echo "Build first: ./build.sh"; exit 1; }
-OUT="docs"; mkdir -p "$OUT" build
+OUT="build/shots"; rm -rf "$OUT"; mkdir -p "$OUT" docs
 swiftc -O scripts/winshot.swift -o build/winshot 2>/dev/null
 
 pkill -x Notchly 2>/dev/null || true; sleep 0.5
@@ -35,5 +36,5 @@ for p in appearance tabshome shortcuts privacy; do
   notifyutil -p notchly.debug.settings.$p; sleep 1.3; shot "settings-$p" "Notchly Settings"
 done
 for n in 0 1; do notifyutil -p notchly.debug.onboard.$n; sleep 1.3; shot "onboarding-$n" "Welcome"; done
-python3 scripts/compose.py 2>/dev/null || echo "(install Pillow to trim shots and build docs/hero.png)"
+python3 scripts/compose.py || echo "(install Pillow, pip3 install pillow, to build the docs/ images from build/shots/)"
 echo "Done."

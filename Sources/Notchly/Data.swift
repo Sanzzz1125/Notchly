@@ -5,6 +5,12 @@ import EventKit
 /// Sample data for screenshots / docs. `defaults write com.sanketh.Notchly demoMode -bool true`
 enum Demo {
     static var on: Bool { P.bool("demoMode") }
+    /// `-demoAccess none` simulates calendar/reminders permission not granted yet (for layout testing).
+    static var noAccess: Bool { P.str("demoAccess") == "none" }
+    /// `-demoMedia idle|noart|long|nometa` simulates other now-playing states.
+    static var media: String { P.str("demoMedia") }
+    /// `-demoEmpty YES` simulates empty clipboard, tray, shortcuts.
+    static var empty: Bool { P.bool("demoEmpty") }
 }
 
 // MARK: Calendar
@@ -34,7 +40,7 @@ final class CalendarService: ObservableObject {
     private var alerted = Set<String>()
 
     func start() {
-        if Demo.on { access = .granted; loadDemo(); return }
+        if Demo.on { if Demo.noAccess { access = .unknown; return }; access = .granted; loadDemo(); return }
         syncStatus()
         NotificationCenter.default.addObserver(forName: .EKEventStoreChanged, object: nil, queue: .main) { [weak self] _ in self?.refresh() }
         let t = Timer(timeInterval: 60, repeats: true) { [weak self] _ in self?.tick() }
@@ -126,6 +132,7 @@ final class ReminderService: ObservableObject {
 
     func start() {
         if Demo.on {
+            if Demo.noAccess { access = .unknown; return }
             access = .granted
             let t = Date()
             items = [ReminderItem(id: "1", title: "Reply to Sam about the invoice", due: t),
@@ -208,6 +215,7 @@ final class ClipboardStore: ObservableObject {
     /// Only pinned snippets are written to disk (UserDefaults). Everything else lives in memory.
     func start() {
         if Demo.on {
+            if Demo.empty { return }
             let n = Date()
             items = [ClipItem(id: UUID(), text: "https://notchly.app/getting-started", pinned: true, date: n, app: "Safari"),
                      ClipItem(id: UUID(), text: "hello@studio.example", pinned: true, date: n, app: "Mail"),
@@ -363,6 +371,7 @@ final class ShortcutStore: ObservableObject {
     @Published var items: [CustomShortcut] = []
     init() {
         if Demo.on {
+            if Demo.empty { return }
             items = [CustomShortcut(name: "Mail", symbol: "envelope.fill", kind: .app, target: "/System/Applications/Mail.app"),
                      CustomShortcut(name: "GitHub", symbol: "chevron.left.forwardslash.chevron.right", kind: .url, target: "https://github.com"),
                      CustomShortcut(name: "Focus mode", symbol: "moon.fill", kind: .siri, target: "Focus")]
@@ -645,5 +654,46 @@ final class WeatherService: ObservableObject {
                 if let o = out { self.now = o; self.fetched = Date(); self.status = "" } else { self.status = "Weather unavailable" }
             }
         }.resume()
+    }
+}
+
+// MARK: Notch gestures
+
+/// What a double-click (or ⌥-click) on the notch does. Stored as a string in preferences.
+enum NotchGesture {
+    static let doubleKey = "gestureDouble"
+    static let optionKey = "gestureOption"
+
+    struct Choice: Identifiable, Hashable { let id: String; let title: String }
+
+    static func choices() -> [Choice] {
+        var out = [Choice(id: "none", title: "Nothing")]
+        out += ShortcutStore.shared.items.map { Choice(id: "shortcut:\($0.id.uuidString)", title: "Shortcut: \($0.name)") }
+        out += QuickAction.allCases.map { Choice(id: "quick:\($0.rawValue)", title: "Toggle: \($0.title)") }
+        out += [Choice(id: "media:playpause", title: "Play / Pause music"), Choice(id: "media:next", title: "Next track"), Choice(id: "media:previous", title: "Previous track")]
+        out += NotchTab.allCases.map { Choice(id: "tab:\($0.rawValue)", title: "Open tab: \($0.title)") }
+        out += [Choice(id: "pause", title: "Pause / resume Notchly")]
+        return out
+    }
+
+    static func fire(_ key: String) {
+        let v = P.str(key)
+        let st = NotchState.shared
+        if v.isEmpty || v == "none" { return }
+        let parts = v.split(separator: ":", maxSplits: 1).map(String.init)
+        switch (parts[0], parts.count > 1 ? parts[1] : "") {
+        case ("shortcut", let id):
+            if let s = ShortcutStore.shared.items.first(where: { $0.id.uuidString == id }) { ShortcutStore.shared.run(s); if s.kind != .shell { st.close() } }
+        case ("quick", let raw):
+            if let a = QuickAction(rawValue: raw) { QuickActions.shared.perform(a) }
+        case ("media", let c):
+            let m = MediaController.shared
+            if c == "playpause" { m.playPause() } else if c == "next" { m.next() } else { m.previous() }
+        case ("tab", let raw):
+            if let t = NotchTab(rawValue: raw) { if st.expanded { st.go(t) } else { st.open(t) } }
+        case ("pause", _):
+            NotchController.shared.setPaused(!Background.user)
+        default: break
+        }
     }
 }

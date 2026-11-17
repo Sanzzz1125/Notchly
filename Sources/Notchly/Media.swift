@@ -23,7 +23,9 @@ final class MediaController: ObservableObject {
     @Published var art: NSImage?
     @Published var tint: Color = .white
     @Published var source = ""
-    @Published var sourceBundle = ""
+    @Published var sourceBundle = "" { didSet { if sourceBundle != oldValue { sourceIcon = MediaController.icon(for: sourceBundle) } } }
+    /// The playing app's icon: shown when the source provides no artwork.
+    @Published var sourceIcon: NSImage?
     private var bridgeLive = false
     private var lastBridgeLine = Date.distantPast
     private var bridgeProc: Process?
@@ -47,8 +49,13 @@ final class MediaController: ObservableObject {
     }
 
     private func startDemo() {
+        let mode = Demo.media
+        if mode == "idle" { return }
         title = "Golden Hour"; artist = "Neon Harbor"; album = "Afterglow"; isPlaying = true; hasTrack = true
         position = 84; duration = 225; source = "Music"; lyric = "Hold on, we're almost home"
+        if mode == "long" { title = "A Very Long Track Title That Keeps Going And Going Forever (Extended Remastered Mix)"; artist = "An Artist With A Rather Long Name feat. Another Long Collaborator"; lyric = "And this lyric line is also extremely long so it must truncate nicely" }
+        if mode == "nometa" { title = "Netflix"; artist = ""; lyric = ""; isPlaying = false; source = "Safari"; sourceBundle = "com.apple.Safari" }
+        if mode == "noart" || mode == "long" || mode == "nometa" { return }
         let img = NSImage(size: NSSize(width: 300, height: 300), flipped: false) { r in
             NSGradient(colors: [NSColor(srgbRed: 1, green: 0.62, blue: 0.2, alpha: 1), NSColor(srgbRed: 0.93, green: 0.2, blue: 0.45, alpha: 1), NSColor(srgbRed: 0.25, green: 0.12, blue: 0.5, alpha: 1)])?.draw(in: r, angle: -70)
             NSColor(white: 1, alpha: 0.9).setFill()
@@ -116,6 +123,10 @@ final class MediaController: ObservableObject {
         case "browser": return P.bool("srcBrowsers")
         default: return P.bool("srcOther")
         }
+    }
+    static func icon(for bundle: String) -> NSImage? {
+        guard !bundle.isEmpty, let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundle) else { return nil }
+        return NSWorkspace.shared.icon(forFile: u.path)
     }
     static func appName(_ b: String) -> String {
         if let u = NSWorkspace.shared.urlForApplication(withBundleIdentifier: b) {

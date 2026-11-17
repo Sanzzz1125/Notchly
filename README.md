@@ -9,7 +9,7 @@ Music, calendar, files, timers and quick actions, one hover away. No app switchi
 
 Free, open source, no account, **no tracking**. Inspired by apps like Dynamic Ledge and Seam; not affiliated with them.
 
-> Screenshots are captured from the running app with built-in sample data (so none of the author's own calendar, clipboard or music appears). The hero image is the real Home tab placed on a generated wallpaper. `./scripts/screenshots.sh` reproduces all of them.
+> Every image is a real capture of the running app with built-in sample data (none of the author's own calendar, clipboard or music), placed on a generated wallpaper with a menu bar. `./scripts/screenshots.sh` reproduces all of them.
 
 ## The problem it solves
 Your notch is the most valuable, most wasted pixel real estate on a MacBook. Notchly turns it into a glanceable, always-available control centre, so skipping a song, checking your next meeting, parking a file, starting a timer or toggling dark mode takes one hover instead of an app switch.
@@ -23,7 +23,7 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 | **Notes** | Multiple quick notes that save as you type. |
 | **Calendar & Reminders** | A 7-day strip with busy dots, a "now" marker, event alerts, tick off to-dos, add new ones. |
 | **Timer, Stopwatch, Focus** | Focus/break cycles with a live countdown beside the notch. |
-| **Controls** | Do Not Disturb, Dark Mode, Keep Awake, Mute, Screenshot, Screen Saver, Sleep Display, Battery Saver. Plus **your own shortcuts**: apps, websites, Shortcuts-app automations or shell commands. |
+| **Controls** | Do Not Disturb, Dark Mode, Keep Awake, Mute, Screenshot, Screen Saver, Sleep Display, Battery Saver. Plus **your own shortcuts**: apps, websites, Shortcuts-app automations or shell commands, each a tile you can also bind to a double-click on the notch. |
 | **System** | CPU, memory, disk and battery with a live CPU sparkline. |
 | **Weather** *(opt-in)* | Current conditions and the next hours. Off by default. |
 | **Camera mirror, App launcher** | A quick mirror before a call; your favourite apps one click away. |
@@ -70,6 +70,7 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 | Hover the notch (or click it, your choice in Settings) | Open |
 | **⌥ Space** | Open / close from anywhere (stays open until you move the pointer in, or press Esc) |
 | **Esc**, or move the pointer away | Close |
+| **Double-click the notch** (or ⌥-click) | Run what you chose in Settings → Behavior → Notch gestures: one of your shortcuts (open WhatsApp…), a quick toggle, play/pause, next track, or a tab |
 | Drag a file toward the notch | Open the Tray with it ready to drop |
 | Two-finger swipe left / right, or scroll the mouse wheel over the icon strip | Next / previous tab |
 | Drag tab icons in the header | Reorder tabs |

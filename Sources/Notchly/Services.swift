@@ -77,7 +77,7 @@ final class TrayStore: ObservableObject {
     @Published var selected = Set<URL>()
     var selectedFiles: [URL] { files.filter { selected.contains($0) } }
     init() {
-        guard Demo.on else { return }
+        guard Demo.on, !Demo.empty else { return }
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("Notchly Demo", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         for n in ["Design brief.pdf", "Hero shot.png", "Budget.xlsx", "Release notes.md", "Moodboard.key", "Demo reel.mov"] {

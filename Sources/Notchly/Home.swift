@@ -86,6 +86,8 @@ struct MediaCard: View {
                 LinearGradient(colors: [m.tint.opacity(0.75), Color.black.opacity(0.5)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 if let a = m.art {
                     Image(nsImage: a).resizable().scaledToFill().transition(.opacity)
+                } else if let ic = m.sourceIcon {
+                    Image(nsImage: ic).resizable().scaledToFit().padding(art * 0.14).transition(.opacity)
                 } else {
                     Image(systemName: "music.note").font(.system(size: art * 0.3, weight: .light)).foregroundStyle(Color.white.opacity(0.7))
                 }
@@ -119,7 +121,7 @@ struct MediaCard: View {
         return VStack(alignment: .leading, spacing: 3) {
             Text(m.title).font(DS.Typo.title).lineLimit(1)
             if !(compact && !clock.lyric.isEmpty) {
-                Text(m.artist).font(DS.Typo.body).foregroundStyle(DS.Ink.secondary).lineLimit(1)
+                Text(m.artist.isEmpty ? m.source : m.artist).font(DS.Typo.body).foregroundStyle(DS.Ink.secondary).lineLimit(1)
             }
             if !clock.lyric.isEmpty {
                 Text(clock.lyric).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(m.tint).lineLimit(1)
@@ -127,8 +129,8 @@ struct MediaCard: View {
                     .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 5)), removal: .opacity))
             }
             Spacer(minLength: 0)
-            Scrubber(value: frac, tint: m.tint) { m.seek($0) }
-            if !compact {
+            if clock.duration > 0 { Scrubber(value: frac, tint: m.tint) { m.seek($0) } }
+            if !compact && clock.duration > 0 {
                 HStack {
                     Text(mmss(frac * clock.duration))
                     Spacer()
@@ -173,6 +175,7 @@ struct SideWidget: View {
         }
         .padding(DS.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
         .card()
     }
     var title: String {

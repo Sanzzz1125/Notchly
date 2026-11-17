@@ -86,29 +86,49 @@ struct CalendarTab: View {
     }
     @Namespace private var ns
     var body: some View {
-        VStack(spacing: DS.Space.s) {
-            HStack(spacing: DS.Space.xs) {
-                ForEach(days, id: \.self) { d in
-                    let sel = Calendar.current.isDate(d, inSameDayAs: cal.day)
-                    let busy = cal.busyDays.contains(Calendar.current.startOfDay(for: d))
-                    Button { withAnimation(Motion.tab) { cal.select(d) } } label: {
-                        VStack(spacing: 1) {
-                            Text(d.formatted(.dateTime.weekday(.abbreviated))).font(DS.Typo.micro)
-                                .foregroundStyle(sel ? Color.white.opacity(0.85) : DS.Ink.secondary)
-                            Text(d.formatted(.dateTime.day())).font(.system(size: 15, weight: .bold, design: .rounded))
-                            Circle().fill(busy ? (sel ? Color.white : P.accent) : Color.clear).frame(width: 4, height: 4)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 5)
-                        .background {
-                            if sel { RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(P.accent).matchedGeometryEffect(id: "day", in: ns) }
-                        }
-                        .contentShape(Rectangle())
+        GeometryReader { g in
+            let compact = g.size.height < 150
+            VStack(spacing: DS.Space.s) {
+                HStack(spacing: DS.Space.xs) {
+                    ForEach(days, id: \.self) { d in dayButton(d, compact: compact) }
+                }
+                CalendarList().padding(compact ? DS.Space.s : DS.Space.m)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
+                    .card()
+            }
+            .frame(width: g.size.width, height: g.size.height)
+        }
+    }
+    func dayButton(_ d: Date, compact: Bool) -> some View {
+        let sel = Calendar.current.isDate(d, inSameDayAs: cal.day)
+        let busy = cal.busyDays.contains(Calendar.current.startOfDay(for: d))
+        return Button { withAnimation(Motion.tab) { cal.select(d) } } label: {
+            Group {
+                if compact {
+                    HStack(spacing: 4) {
+                        Text(d.formatted(.dateTime.weekday(.narrow))).font(DS.Typo.micro).foregroundStyle(sel ? Color.white.opacity(0.85) : DS.Ink.secondary)
+                        Text(d.formatted(.dateTime.day())).font(.system(size: 13, weight: .bold, design: .rounded))
+                        Circle().fill(busy ? (sel ? Color.white : P.accent) : Color.clear).frame(width: 4, height: 4)
                     }
-                    .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.94, fill: !sel))
+                    .padding(.vertical, 5)
+                } else {
+                    VStack(spacing: 1) {
+                        Text(d.formatted(.dateTime.weekday(.abbreviated))).font(DS.Typo.micro)
+                            .foregroundStyle(sel ? Color.white.opacity(0.85) : DS.Ink.secondary)
+                        Text(d.formatted(.dateTime.day())).font(.system(size: 15, weight: .bold, design: .rounded))
+                        Circle().fill(busy ? (sel ? Color.white : P.accent) : Color.clear).frame(width: 4, height: 4)
+                    }
+                    .padding(.vertical, 5)
                 }
             }
-            CalendarList().padding(DS.Space.m).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).card()
+            .frame(maxWidth: .infinity)
+            .background {
+                if sel { RoundedRectangle(cornerRadius: DS.Radius.m, style: .continuous).fill(P.accent).matchedGeometryEffect(id: "day", in: ns) }
+            }
+            .contentShape(Rectangle())
         }
+        .buttonStyle(PressStyle(radius: DS.Radius.m, scale: 0.94, fill: !sel))
     }
 }
 

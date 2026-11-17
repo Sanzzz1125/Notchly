@@ -211,7 +211,11 @@ final class NotchController {
         removeMonitors()
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged, .leftMouseDown, .leftMouseUp]
         if let g = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in self?.evaluate() }) { monitors.append(g) }
-        if let l = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] ev in self?.evaluate(); return ev }) { monitors.append(l) }
+        if let l = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] ev in
+            self?.evaluate()
+            if ev.type == .leftMouseDown { self?.notchClick(ev) }
+            return ev
+        }) { monitors.append(l) }
         if let sc = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel, handler: { [weak self] ev in self?.scroll(ev); return ev }) { monitors.append(sc) }
     }
     private func removeMonitors() {
@@ -226,6 +230,19 @@ final class NotchController {
         t.tolerance = 0.1
         RunLoop.main.add(t, forMode: .common)
         guardTimer = t
+    }
+
+    /// The physical notch (plus a little slop), in screen coordinates.
+    private func notchRect() -> NSRect {
+        let pf = panel.frame, n = state.notchSize
+        return NSRect(x: pf.midX - n.width / 2 - 6, y: pf.maxY - n.height - 4, width: n.width + 12, height: n.height + 8)
+    }
+
+    /// Double-click or ⌥-click on the notch runs the action chosen in Settings → Behavior.
+    private func notchClick(_ ev: NSEvent) {
+        guard notchRect().contains(NSEvent.mouseLocation) else { return }
+        if ev.clickCount == 2 { NotchGesture.fire(NotchGesture.doubleKey) }
+        else if ev.clickCount == 1 && ev.modifierFlags.contains(.option) { NotchGesture.fire(NotchGesture.optionKey) }
     }
 
     private func pointerInside() -> Bool {

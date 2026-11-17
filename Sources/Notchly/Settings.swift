@@ -235,6 +235,20 @@ struct AppearancePane: View {
     }
 }
 
+struct GesturePicker: View {
+    let title: String
+    let key: String
+    @ObservedObject var store = ShortcutStore.shared
+    @AppStorage("gestureDouble") private var d = "none"
+    @AppStorage("gestureOption") private var o = "none"
+    var body: some View {
+        let binding = Binding<String>(get: { key == NotchGesture.doubleKey ? d : o }, set: { if key == NotchGesture.doubleKey { d = $0 } else { o = $0 } })
+        Picker(title, selection: binding) {
+            ForEach(NotchGesture.choices()) { Text($0.title).tag($0.id) }
+        }
+    }
+}
+
 struct BehaviorPane: View {
     @AppStorage("openMode") var openMode = 0
     @AppStorage("openDelay") var openDelay = 0.15
@@ -257,6 +271,12 @@ struct BehaviorPane: View {
             Section("Closing") {
                 Toggle("Collapse when the pointer leaves", isOn: $collapseOnExit)
                 if collapseOnExit { SliderRow(title: "Close delay", value: $closeDelay, range: 0.1...2, step: 0.05, unit: " s") }
+            }
+            Section("Notch gestures") {
+                GesturePicker(title: "Double-click the notch", key: NotchGesture.doubleKey)
+                GesturePicker(title: "⌥-click the notch", key: NotchGesture.optionKey)
+                Text("Click twice quickly on the notch itself. Choose one of your shortcuts (Settings → Shortcuts), a quick toggle, music controls, or a tab. Works whether the notch is closed or open.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Gestures") {
                 Toggle("Swipe left / right with two fingers to switch tabs", isOn: $gestures)
@@ -387,6 +407,8 @@ struct ShortcutsPane: View {
                 Button { store.items.append(CustomShortcut()) } label: { Label("Add shortcut", systemImage: "plus") }
             }
             Section {
+                Text("Tip: to launch one with a double-click on the notch, pick it in Settings → Behavior → Notch gestures.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Text("Shell commands run as you, with your permissions, only when you press the tile. Only add commands you understand.")
                     .font(.caption).foregroundStyle(.secondary)
             }

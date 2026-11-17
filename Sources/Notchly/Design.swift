@@ -187,6 +187,7 @@ struct Meter: View {
     }
 }
 
+/// Empty / permission state that shrinks gracefully: full → no subtitle → inline → title only. Never overflows its card.
 struct EmptyState: View {
     let symbol: String
     let title: String
@@ -194,15 +195,37 @@ struct EmptyState: View {
     var actionTitle: String = ""
     var action: () -> Void = {}
     var body: some View {
-        VStack(spacing: 6) {
-            Image(systemName: symbol).font(.system(size: 22, weight: .light)).foregroundStyle(DS.Ink.tertiary)
-            Text(title).font(DS.Typo.bodyEm).foregroundStyle(DS.Ink.secondary).multilineTextAlignment(.center)
-            if !subtitle.isEmpty { Text(subtitle).font(DS.Typo.caption).foregroundStyle(DS.Ink.tertiary).multilineTextAlignment(.center) }
-            if !actionTitle.isEmpty { Chip(title: actionTitle, action: action).padding(.top, 2) }
+        ViewThatFits(in: .vertical) {
+            full
+            if !subtitle.isEmpty { noSubtitle }
+            inline
+            titleOnly
         }
-        .padding(DS.Space.m)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+    private var iconView: some View { Image(systemName: symbol).font(.system(size: 22, weight: .light)).foregroundStyle(DS.Ink.tertiary) }
+    private var titleView: some View { Text(title).font(DS.Typo.bodyEm).foregroundStyle(DS.Ink.secondary).multilineTextAlignment(.center).lineLimit(2) }
+    private var button: some View { Chip(title: actionTitle, action: action) }
+    private var full: some View {
+        VStack(spacing: 6) {
+            iconView; titleView
+            if !subtitle.isEmpty { Text(subtitle).font(DS.Typo.caption).foregroundStyle(DS.Ink.tertiary).multilineTextAlignment(.center).lineLimit(3) }
+            if !actionTitle.isEmpty { button.padding(.top, 2) }
+        }
+        .padding(DS.Space.s).fixedSize(horizontal: false, vertical: true)
+    }
+    private var noSubtitle: some View {
+        VStack(spacing: 6) { iconView; titleView; if !actionTitle.isEmpty { button } }
+            .padding(DS.Space.xs).fixedSize(horizontal: false, vertical: true)
+    }
+    private var inline: some View {
+        VStack(spacing: 5) {
+            HStack(spacing: 6) { Image(systemName: symbol).font(.system(size: 14, weight: .light)).foregroundStyle(DS.Ink.tertiary); titleView }
+            if !actionTitle.isEmpty { button }
+        }
+        .padding(DS.Space.xxs).fixedSize(horizontal: false, vertical: true)
+    }
+    private var titleOnly: some View { titleView.padding(DS.Space.xxs) }
 }
 
 // MARK: Surfaces

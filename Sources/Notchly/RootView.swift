@@ -110,6 +110,8 @@ struct WingsView: View {
             if let a = media.art {
                 Image(nsImage: a).resizable().scaledToFill().frame(width: 22, height: 22)
                     .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            } else if let ic = media.sourceIcon {
+                Image(nsImage: ic).resizable().scaledToFit().frame(width: 22, height: 22)
             } else {
                 Image(systemName: "music.note").foregroundStyle(media.tint)
             }
