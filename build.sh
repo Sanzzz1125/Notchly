@@ -34,7 +34,13 @@ else
   echo "media bridge skipped (see /tmp/notchly_bridge.log)"
 fi
 
-codesign --force --sign - "$APP"
+# Stable local certificate (optional, scripts/make-signing-cert.sh): macOS then keeps "Always Allow" for the
+# Keychain and Automation across rebuilds. Without it, ad-hoc signing (macOS asks again after each build).
+if security find-certificate -c "Notchly Local Signing" >/dev/null 2>&1; then
+  codesign --force --sign "Notchly Local Signing" "$APP" || codesign --force --sign - "$APP"
+else
+  codesign --force --sign - "$APP"
+fi
 # Make sure macOS routes notchly:// (Spotify sign-in) to this build
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" >/dev/null 2>&1 || true
 echo "Built $APP"

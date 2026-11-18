@@ -113,6 +113,11 @@ final class NotchController {
         ws.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(false) }
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(true) }
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in self?.setScreenOff(false) }
+        ws.addObserver(forName: NSWorkspace.sessionDidBecomeActiveNotification, object: nil, queue: .main) { [weak self] _ in self?.recover() }
+        // Unlocking does not always wake "screens" (e.g. lock without display sleep): re-attach on unlock too.
+        DistributedNotificationCenter.default().addObserver(forName: NSNotification.Name("com.apple.screenIsUnlocked"), object: nil, queue: .main) { [weak self] _ in
+            self?.setScreenOff(false); self?.recover()
+        }
 
         installMonitors()
 
@@ -286,6 +291,10 @@ final class NotchController {
                 dbg("DIAG done")
             }
         }
+        hook("sim.sleep") { NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidSleepNotification, object: nil); dbg("SIM sleep") }
+        hook("sim.wake") { NSWorkspace.shared.notificationCenter.post(name: NSWorkspace.screensDidWakeNotification, object: nil); dbg("SIM wake") }
+        hook("sim.unlock") { self.setScreenOff(false); self.recover(); dbg("SIM unlock") }
+        hook("panelstate") { dbg("PANEL visible=\(self.panel.isVisible) frame=\(Int(self.panel.frame.minX)),\(Int(self.panel.frame.minY)) \(Int(self.panel.frame.width))x\(Int(self.panel.frame.height)) paused=\(Background.paused) hasNotch=\(self.state.hasNotch) notchW=\(Int(self.state.notchSize.width))") }
         hook("keystate") {
             let w = self.panel
             dbg("KEYSTATE appActive=\(NSApp.isActive) panelKey=\(w?.isKeyWindow ?? false) firstResponder=\(w?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")")
@@ -329,12 +338,37 @@ final class NotchController {
         Background.user = p
         applyPauseState()
     }
+    /// Screen asleep / locked: stop background work, but never hide the panel. Re-showing a hidden panel behind the
+    /// lock screen is what made the notch vanish after unlocking.
     private func setScreenOff(_ off: Bool) {
         Background.screenOff = off
-        applyPauseState()
+        MediaController.shared.setPaused(Background.paused)
+        if !off { recover() }
+    }
+
+    private var recoverWork: [DispatchWorkItem] = []
+    /// Put the island back exactly over the notch after wake/unlock. The display reports its notch size a moment
+    /// late after waking, so check again a few times while it settles.
+    func recover() {
+        guard !Background.user, panel != nil else { return }
+        recoverWork.forEach { $0.cancel() }
+        recoverWork = []
+        let fix = { [weak self] in
+            guard let self = self, !Background.user else { return }
+            self.reposition()
+            if !self.panel.isVisible { self.panel.orderFrontRegardless() }
+            self.panel.orderFrontRegardless()
+            if self.monitors.isEmpty { self.installMonitors() }
+        }
+        fix()
+        for t in [0.5, 1.5, 4.0] {
+            let w = DispatchWorkItem(block: fix)
+            recoverWork.append(w)
+            DispatchQueue.main.asyncAfter(deadline: .now() + t, execute: w)
+        }
     }
     private func applyPauseState() {
-        let off = Background.paused
+        let off = Background.user
         MediaController.shared.setPaused(off)
         (NSApp.delegate as? AppDelegate)?.refreshMenuIcon()
         if off {
