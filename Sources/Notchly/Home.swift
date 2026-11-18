@@ -11,11 +11,13 @@ func mmss(_ s: Double) -> String {
 struct HomeTab: View {
     @AppStorage("homeSide") var side = "calendar"
     @AppStorage("sideWidth") var sideW = 210.0
+    @ObservedObject var media = MediaController.shared
     var body: some View {
         GeometryReader { g in
             // The player keeps at least 330 pt; the widget gets exactly the width you chose when there is room.
             let room = g.size.width - 330 - DS.Space.m
-            let showSide = side != "none" && room >= 140
+            // While a song is showing, the music box gets the whole width.
+            let showSide = side != "none" && !media.hasTrack && room >= 140
             let w = min(CGFloat(sideW), max(140, room))
             HStack(spacing: DS.Space.m) {
                 MediaCard()

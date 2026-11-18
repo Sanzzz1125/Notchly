@@ -136,6 +136,7 @@ final class NotchController {
             notify_register_dispatch("notchly.debug.preview.\(name)", &t, DispatchQueue.main) { _ in NotchState.shared.preview(kind) }
             debugTokens.append(t)
         }
+        installSpotifyDebugHooks()
         var tp: Int32 = 0
         notify_register_dispatch("notchly.debug.pause", &tp, DispatchQueue.main) { [weak self] _ in self?.setPaused(true) }
         debugTokens.append(tp)
@@ -150,6 +151,49 @@ final class NotchController {
             NotchState.shared.post(IslandAlert(symbol: "bolt.fill", tint: .green, title: "Charging", detail: "82%", level: 0.82, duration: 6))
         }
         debugTokens.append(tok2)
+    }
+
+    /// Test-harness hooks for scripts/test-spotify.sh (results go to stdout). Only active with -debugHooks.
+    private func installSpotifyDebugHooks() {
+        func dbg(_ s: String) { print(s); fflush(stdout) }
+        func hook(_ name: String, _ f: @escaping () -> Void) {
+            var t: Int32 = 0
+            notify_register_dispatch("notchly.debug.spotify.\(name)", &t, DispatchQueue.main) { _ in f() }
+            debugTokens.append(t)
+        }
+        hook("signin") { SpotifyAuth.shared.signIn() }
+        hook("status") { dbg("STATUS signedIn=\(SpotifyAuth.shared.signedIn) user=\(SpotifyAuth.shared.userName) msg=\(SpotifyAuth.shared.status)") }
+        hook("lists") {
+            Task {
+                do { let l = try await SpotifyAPI.shared.playlists(); dbg("LISTS \(l.count) first=\(l.first?.name ?? "-") last=\(l.last?.name ?? "-")") }
+                catch let e as SpotifyError { dbg("LISTS ERR \(e.message)") } catch { dbg("LISTS ERR \(error)") }
+            }
+        }
+        for (name, pid) in [("ok", "p1"), ("ratelimit", "ratelimit"), ("gone", "gone"), ("forbidden", "forbidden")] {
+            hook("add.\(name)") {
+                Task {
+                    do { try await SpotifyAPI.shared.add(["spotify:track:TEST"], to: pid); dbg("ADD \(name) OK") }
+                    catch let e as SpotifyError { dbg("ADD \(name) ERR \(e.message)") } catch { dbg("ADD \(name) ERR \(error)") }
+                }
+            }
+        }
+        hook("add.big") {
+            Task {
+                do { try await SpotifyAPI.shared.add((0..<250).map { "spotify:track:T\($0)" }, to: "p1"); dbg("ADD big OK") }
+                catch let e as SpotifyError { dbg("ADD big ERR \(e.message)") } catch { dbg("ADD big ERR \(error)") }
+            }
+        }
+        hook("create") {
+            Task {
+                do { let p = try await SpotifyAPI.shared.createPlaylist(name: "Mixed: ünïcode 🎧 test", isPublic: false); dbg("CREATE OK \(p.id) \(p.name)") }
+                catch let e as SpotifyError { dbg("CREATE ERR \(e.message)") } catch { dbg("CREATE ERR \(error)") }
+            }
+        }
+        hook("signout") { SpotifyAuth.shared.signOut(); dbg("SIGNEDOUT") }
+        hook("pkce") {
+            let ok = SpotifyAuth.challenge(for: "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk") == "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"
+            dbg("PKCE rfc7636-vector \(ok ? "OK" : "FAIL")")
+        }
     }
 
     private func targetScreen() -> NSScreen? {

@@ -35,5 +35,7 @@ else
 fi
 
 codesign --force --sign - "$APP"
+# Make sure macOS routes notchly:// (Spotify sign-in) to this build
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP" >/dev/null 2>&1 || true
 echo "Built $APP"
 [ "${NOTCHLY_NO_LAUNCH:-}" = "1" ] || open "$APP"

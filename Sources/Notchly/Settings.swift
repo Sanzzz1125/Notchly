@@ -29,7 +29,7 @@ enum SettingsWindow {
 
 enum Pane: String, CaseIterable, Identifiable {
     case general = "General", appearance = "Appearance", behavior = "Behavior", tabs = "Tabs & Home"
-    case alerts = "Live Activities", media = "Media", timer = "Timer", controls = "Controls", shortcuts = "Shortcuts", power = "Battery", privacy = "Privacy", about = "About"
+    case alerts = "Live Activities", media = "Media", timer = "Timer", controls = "Controls", shortcuts = "Shortcuts", playlists = "Playlists", power = "Battery", privacy = "Privacy", about = "About"
     var id: String { rawValue }
     var symbol: String {
         switch self {
@@ -42,6 +42,7 @@ enum Pane: String, CaseIterable, Identifiable {
         case .timer: return "timer"
         case .controls: return "switch.2"
         case .shortcuts: return "bolt.fill"
+        case .playlists: return "music.note.list"
         case .power: return "battery.100.bolt"
         case .privacy: return "lock.shield.fill"
         case .about: return "info.circle.fill"
@@ -90,6 +91,7 @@ struct SettingsView: View {
                 case .timer: TimerPane()
                 case .controls: ControlsPane()
                 case .shortcuts: ShortcutsPane()
+                case .playlists: PlaylistsPane()
                 case .power: PowerPane()
                 case .privacy: PrivacyPane()
                 case .about: AboutPane()
@@ -531,6 +533,7 @@ struct PowerPane: View {
 struct PrivacyPane: View {
     @AppStorage("allowNetwork") var net = true
     @AppStorage("weatherEnabled") var weather = false
+    @AppStorage("spotifyEnabled") var spotify = false
     @AppStorage("weatherCity") var city = ""
     @AppStorage("weatherUnit") var unit = 0
     var body: some View {
@@ -538,6 +541,11 @@ struct PrivacyPane: View {
             Section("Network") {
                 Toggle("Allow internet access (lyrics from lrclib.net, Spotify artwork)", isOn: $net)
                 Text("Nothing else ever leaves your Mac. There is no analytics, no tracking and no account.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Spotify playlists (off by default)") {
+                Toggle("Allow Spotify playlist features (accounts.spotify.com, api.spotify.com)", isOn: $spotify).disabled(!net)
+                Text("Sends only your sign-in token, playlist IDs and song IDs, and only when you press a button. Set up under Settings → Playlists.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("Weather (off by default)") {
@@ -553,5 +561,113 @@ struct PrivacyPane: View {
                 Text("Revoke any of these anytime in System Settings → Privacy & Security.").font(.caption).foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+struct PlaylistsPane: View {
+    @AppStorage("spotifyEnabled") var enabled = false
+    @AppStorage("spotifyClientID") var clientID = ""
+    @AppStorage("allowNetwork") var net = true
+    @AppStorage("spotifyDefaultID") var defID = ""
+    @AppStorage("spotifyDefaultName") var defName = ""
+    @ObservedObject var auth = SpotifyAuth.shared
+    @StateObject private var lists = Box<[SPPlaylist]>([])
+    @StateObject private var report = Box<String>("")
+    @StateObject private var working = Box<Bool>(false)
+
+    private func run(_ title: String, _ work: @escaping () async throws -> String) {
+        working.v = true; report.v = title + "…"
+        Task {
+            let out: String
+            do { out = try await work() }
+            catch let e as SpotifyError { out = "✗ " + e.message }
+            catch { out = "✗ \(error.localizedDescription)" }
+            await MainActor.run { report.v = out; working.v = false }
+        }
+    }
+
+    private func loadLists() {
+        run("Loading your playlists") {
+            let l = try await SpotifyAPI.shared.playlists()
+            await MainActor.run {
+                lists.v = l
+                if defID.isEmpty || !l.contains(where: { $0.id == defID }),
+                   let m = l.first(where: { $0.name.lowercased().hasPrefix("movzzz") }) { defID = m.id; defName = m.name }
+            }
+            return "✓ Found \(l.count) playlists you can add to"
+        }
+    }
+
+    private func writeTest() {
+        let a = NSAlert()
+        a.messageText = "Create a test playlist?"
+        a.informativeText = "This creates ONE private playlist called \"Notchly test (safe to delete)\" and adds the song playing in Spotify to it. Nothing else in your account is touched."
+        a.addButton(withTitle: "Create test playlist"); a.addButton(withTitle: "Cancel")
+        guard a.runModal() == .alertFirstButtonReturn else { return }
+        run("Creating test playlist") {
+            guard let t = SpotifyTrack.current(), t.isAddable else { return "✗ Play a normal song in Spotify first, then try again" }
+            let pl = try await SpotifyAPI.shared.createPlaylist(name: "Notchly test (safe to delete)", isPublic: false)
+            try await SpotifyAPI.shared.add([t.uri], to: pl.id)
+            return "✓ Created “\(pl.name)” and added “\(t.title)”. Check Spotify, then delete the playlist."
+        }
+    }
+
+    var body: some View {
+        Form {
+            Section("Spotify playlists") {
+                Toggle("Enable (uses the internet: accounts.spotify.com and api.spotify.com)", isOn: $enabled)
+                if !net { Text("Internet access is switched off in Settings → Privacy, so this can't work yet.").font(.caption).foregroundStyle(.orange) }
+                Text("Adds the song playing in Spotify to a playlist from the music card. Only your sign-in token, playlist IDs and song IDs are sent, and only when you click.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("One-time setup (about 3 minutes)") {
+                Text("1. Open the Spotify dashboard and log in with your Premium account.\n2. Create app: any name and description, tick “Web API”.\n3. Add this Redirect URI exactly: notchly://callback  (then Save).\n4. Open the app’s Settings and copy the Client ID.\n5. Paste it below, then press Sign in.")
+                    .font(.callout)
+                HStack {
+                    Button("Open Spotify dashboard") { NSWorkspace.shared.open(URL(string: "https://developer.spotify.com/dashboard")!) }
+                    Button("Copy redirect address") {
+                        NSPasteboard.general.clearContents(); NSPasteboard.general.setString(SpotifyAuth.redirect, forType: .string)
+                        report.v = "Copied notchly://callback"
+                    }
+                }
+                TextField("Client ID", text: $clientID, prompt: Text("32 characters from your Spotify app"))
+            }
+            Section("Account") {
+                HStack {
+                    Image(systemName: auth.signedIn ? "checkmark.circle.fill" : "person.crop.circle.badge.questionmark")
+                        .foregroundStyle(auth.signedIn ? Color.green : Color.secondary)
+                    Text(auth.signedIn ? "Signed in\(auth.userName.isEmpty ? "" : " as \(auth.userName)")" : "Not signed in")
+                    Spacer()
+                    if auth.busy { ProgressView().controlSize(.small) }
+                    if auth.signedIn { Button("Sign out") { auth.signOut(); lists.v = [] } }
+                    else { Button("Sign in with Spotify") { auth.signIn() }.disabled(!enabled || clientID.isEmpty) }
+                }
+                if !auth.status.isEmpty { Text(auth.status).font(.caption).foregroundStyle(.secondary) }
+            }
+            if auth.signedIn {
+                Section("Default playlist (the ＋ button)") {
+                    Picker("Add to", selection: Binding(get: { defID }, set: { id in
+                        defID = id; defName = lists.v.first { $0.id == id }?.name ?? defName
+                    })) {
+                        if lists.v.isEmpty && !defID.isEmpty { Text(defName.isEmpty ? "Current default" : defName).tag(defID) }
+                        if defID.isEmpty { Text("Choose…").tag("") }
+                        ForEach(lists.v) { Text($0.name).tag($0.id) }
+                    }
+                    Text(defName.isEmpty ? "Not chosen yet. Load your playlists, then pick one (a playlist starting with “Movzzz” is chosen automatically)." : "Songs go to “\(defName)”.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Section("Check the connection") {
+                    HStack {
+                        Button("Load my playlists") { loadLists() }.disabled(working.v || !enabled)
+                        Button("Test adding a song…") { writeTest() }.disabled(working.v || !enabled)
+                        if working.v { ProgressView().controlSize(.small) }
+                    }
+                    if !report.v.isEmpty { Text(report.v).font(.callout) }
+                }
+            } else if !report.v.isEmpty {
+                Section { Text(report.v).font(.callout) }
+            }
+        }
+        .onAppear { if auth.signedIn && enabled && lists.v.isEmpty && !Demo.on { loadLists() } }
     }
 }

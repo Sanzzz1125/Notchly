@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         CalendarService.shared.start()
         ReminderService.shared.start()
         ClipboardStore.shared.start()
+        SpotifyAuth.shared.start()
         StatsService.shared.start()
         VolumeMonitor.shared.start()
         DownloadsWatcher.shared.start()
@@ -27,6 +28,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NotchState.shared.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Notchly", detail: "Hover the notch to open", duration: 2.2))
             }
         }
+    }
+
+    /// notchly://callback?… (Spotify sign-in returns here)
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for u in urls { SpotifyAuth.shared.handle(u) }
     }
 
     private func buildMenu() {
