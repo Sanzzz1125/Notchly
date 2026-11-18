@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(./.build/**)",
+      "Read(./build/**)",
+      "Read(./dist/**)",
+      "Read(./node_modules/**)",
+      "Read(./venv/**)",
+      "Read(./.venv/**)",
+      "Read(./**/__pycache__/**)",
+      "Read(./DerivedData/**)"
+    ]
+  }
+}

@@ -5,3 +5,13 @@ build/
 .DS_Store
 *.zip
 dist/
+node_modules/
+venv/
+.venv/
+__pycache__/
+*.pyc
+DerivedData/
+*.xcarchive
+*.log
+.idea/
+.vscode/

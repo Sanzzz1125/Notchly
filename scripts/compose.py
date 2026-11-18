@@ -7,6 +7,8 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 SHOTS, DOCS = os.path.join(ROOT, "build", "shots"), os.path.join(ROOT, "docs")
 os.makedirs(DOCS, exist_ok=True)
+import re
+KEEP = set(re.findall(r"docs/([a-z0-9-]+\.png)", open(os.path.join(ROOT, "README.md")).read())) | {"hero.png", "social-preview.png"}
 
 def trim(im, pad=0):
     bb = im.getchannel("A").point(lambda v: 255 if v > 8 else 0).getbbox()
@@ -34,7 +36,7 @@ def island_card(src, name, pad_bottom=70, min_w=1500, seed=0):
     bg = wallpaper(w, im.height + pad_bottom, seed)
     menubar(bg)
     bg.alpha_composite(im, ((w - im.width) // 2, 0))
-    bg.convert("RGB").save(os.path.join(DOCS, name), optimize=True)
+    if name in KEEP: bg.convert("RGB").save(os.path.join(DOCS, name), optimize=True)
     return bg
 
 def window_card(src, name, pad=64, seed=1):
@@ -44,7 +46,7 @@ def window_card(src, name, pad=64, seed=1):
     ImageDraw.Draw(sh).rounded_rectangle((pad, pad + 14, pad + im.width, pad + im.height + 14), 40, fill=(0, 0, 0, 150))
     bg = Image.alpha_composite(bg, sh.filter(ImageFilter.GaussianBlur(26)))
     bg.alpha_composite(im, (pad, pad))
-    bg.convert("RGB").save(os.path.join(DOCS, name), optimize=True)
+    if name in KEEP: bg.convert("RGB").save(os.path.join(DOCS, name), optimize=True)
 
 def font(size, bold=True):
     for p in ("/System/Library/Fonts/SFNS.ttf", "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial.ttf"):
@@ -74,10 +76,6 @@ sc = 1.3; im = im.resize((int(im.width * sc), int(im.height * sc)), Image.LANCZO
 W, H = 2400, im.height + 90
 bg = wallpaper(W, H, 0); menubar(bg, 52); bg.alpha_composite(im, ((W - im.width) // 2, 0))
 bg.convert("RGB").save(os.path.join(DOCS, "hero.png"), optimize=True)
-
-# The two historical README images keep their file names but now show the correct, current UI
-for old, src in (("screenshot-home.png", "hero.png"), ("screenshot-player.png", "tab-home.png")):
-    Image.open(os.path.join(DOCS, src)).convert("RGB").save(os.path.join(DOCS, old), optimize=True)
 
 # GitHub social preview (Settings → Social preview): 1280x640
 S = wallpaper(1280, 640, 0).convert("RGBA")
