@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DownloadsWatcher.shared.start()
         NotchController.shared.start()
         buildMenu()
+        installMainMenu()
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.refreshMenuIcon()
         }
@@ -28,6 +29,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NotchState.shared.post(IslandAlert(symbol: "sparkles", tint: P.accent, title: "Notchly", detail: "Hover the notch to open", duration: 2.2))
             }
         }
+    }
+
+    /// An accessory app has no main menu, and macOS routes ⌘V/⌘C/⌘X/⌘A/⌘Z to text fields *through* an Edit menu.
+    /// Without this, paste (and copy, select-all, undo) silently do nothing in every Notchly text field.
+    private func installMainMenu() {
+        let main = NSMenu()
+        let appItem = NSMenuItem(); main.addItem(appItem)
+        let app = NSMenu()
+        app.addItem(withTitle: "Settings…", action: #selector(settings), keyEquivalent: ",").target = self
+        app.addItem(.separator())
+        app.addItem(withTitle: "Quit Notchly", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = app
+
+        let editItem = NSMenuItem(); main.addItem(editItem)
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editItem.submenu = edit
+
+        let winItem = NSMenuItem(); main.addItem(winItem)
+        let win = NSMenu(title: "Window")
+        win.addItem(withTitle: "Close", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        win.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        winItem.submenu = win
+        NSApp.mainMenu = main
     }
 
     /// notchly://callback?… (Spotify sign-in returns here)

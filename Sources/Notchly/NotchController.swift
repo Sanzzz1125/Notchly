@@ -4,6 +4,11 @@ import Carbon.HIToolbox
 import notify
 import Combine
 
+/// Accepts the very first click, so a click on a text field focuses it instead of only "waking" the panel.
+final class NotchHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+}
+
 final class NotchPanel: NSPanel {
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -17,9 +22,33 @@ final class NotchPanel: NSPanel {
         ignoresMouseEvents = true
     }
     override var canBecomeKey: Bool { true }
+
+    /// A non-activating panel is not key by default, so text fields inside it never got keyboard input.
+    /// Making it key on click (without activating the app) lets typing and ⌘V work in Notes, search and reminders.
+    override func sendEvent(_ event: NSEvent) {
+        if (event.type == .leftMouseDown || event.type == .rightMouseDown), !isKeyWindow { makeKey() }
+        super.sendEvent(event)
+    }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
     override func cancelOperation(_ sender: Any?) { NotchState.shared.close() }
+
+    /// Text fields inside the island (Notes, search, reminders) need ⌘V/⌘C/⌘X/⌘A/⌘Z even though the app is not "active".
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command, let k = event.charactersIgnoringModifiers {
+            let sel: Selector?
+            switch k {
+            case "v": sel = #selector(NSText.paste(_:))
+            case "c": sel = #selector(NSText.copy(_:))
+            case "x": sel = #selector(NSText.cut(_:))
+            case "a": sel = #selector(NSText.selectAll(_:))
+            case "z": sel = Selector(("undo:"))
+            default: sel = nil
+            }
+            if let sel = sel, NSApp.sendAction(sel, to: nil, from: self) { return true }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 enum HotKey {
@@ -49,7 +78,7 @@ final class NotchController {
     static let shared = NotchController()
     private let state = NotchState.shared
     private var panel: NotchPanel!
-    private var hosting: NSHostingView<RootView>!
+    private var hosting: NotchHostingView<RootView>!
     private var monitors: [Any] = []
     private var openWork: DispatchWorkItem?
     private var closeWork: DispatchWorkItem?
@@ -63,7 +92,7 @@ final class NotchController {
 
     func start() {
         panel = NotchPanel()
-        hosting = NSHostingView(rootView: RootView())
+        hosting = NotchHostingView(rootView: RootView())
         hosting.sizingOptions = []
         hosting.autoresizingMask = [.width, .height]
         panel.contentView = hosting
@@ -188,6 +217,10 @@ final class NotchController {
                 do { let p = try await SpotifyAPI.shared.createPlaylist(name: "Mixed: ünïcode 🎧 test", isPublic: false); dbg("CREATE OK \(p.id) \(p.name)") }
                 catch let e as SpotifyError { dbg("CREATE ERR \(e.message)") } catch { dbg("CREATE ERR \(error)") }
             }
+        }
+        hook("keystate") {
+            let w = self.panel
+            dbg("KEYSTATE appActive=\(NSApp.isActive) panelKey=\(w?.isKeyWindow ?? false) firstResponder=\(w?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")")
         }
         hook("signout") { SpotifyAuth.shared.signOut(); dbg("SIGNEDOUT") }
         hook("pkce") {
