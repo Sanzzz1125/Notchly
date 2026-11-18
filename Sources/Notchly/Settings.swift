@@ -3,20 +3,37 @@ import AppKit
 import ServiceManagement
 import UniformTypeIdentifiers
 
+enum MusicTab: String, CaseIterable, Identifiable {
+    case stash = "Stash", playlists = "Playlists", nowPlaying = "Now Playing"
+    var id: String { rawValue }
+}
+
 final class SettingsNav: ObservableObject {
     static let shared = SettingsNav()
     @Published var pane: Pane = .appearance
+    /// Sub-section of "Music". Starts on the Stash if Spotify playlists are on, otherwise on Now Playing.
+    @Published var musicTab: MusicTab = P.bool("spotifyEnabled") ? .stash : .nowPlaying
+
+    /// Old standalone panes now live inside Music; deep links keep working.
+    func go(_ p: Pane) {
+        switch p {
+        case .stash: pane = .music; musicTab = .stash
+        case .playlists: pane = .music; musicTab = .playlists
+        case .media: pane = .music; musicTab = .nowPlaying
+        default: pane = p
+        }
+    }
 }
 
 enum SettingsWindow {
     static var window: NSWindow?
     static func show(_ pane: Pane? = nil) {
-        if let p = pane { SettingsNav.shared.pane = p }
+        if let p = pane { SettingsNav.shared.go(p) }
         if window == nil {
             let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 760, height: 560),
                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
                              backing: .buffered, defer: false)
-            w.title = "Notchly Settings"
+            w.title = "Notchly"
             w.isReleasedWhenClosed = false
             w.contentView = NSHostingView(rootView: SettingsView())
             w.center()
@@ -28,11 +45,15 @@ enum SettingsWindow {
 }
 
 enum Pane: String, CaseIterable, Identifiable {
-    case general = "General", appearance = "Appearance", behavior = "Behavior", tabs = "Tabs & Home"
+    case music = "Music", stash = "Stash", general = "General", appearance = "Appearance", behavior = "Behavior", tabs = "Tabs & Home"
     case alerts = "Live Activities", media = "Media", timer = "Timer", controls = "Controls", shortcuts = "Shortcuts", playlists = "Playlists", power = "Battery", privacy = "Privacy", about = "About"
     var id: String { rawValue }
+    /// What the sidebar shows: Stash, Playlists and Now Playing are inside Music.
+    static var sidebar: [Pane] { allCases.filter { ![.stash, .playlists, .media].contains($0) } }
     var symbol: String {
         switch self {
+        case .music: return "music.note.list"
+        case .stash: return "tray.full.fill"
         case .general: return "gearshape.fill"
         case .appearance: return "paintbrush.fill"
         case .behavior: return "hand.tap.fill"
@@ -60,8 +81,8 @@ struct SettingsView: View {
                     Text("Notchly").font(.system(size: 15, weight: .bold))
                 }
                 .padding(.bottom, 12).padding(.top, 8)
-                ForEach(Pane.allCases) { p in
-                    Button { nav.pane = p } label: {
+                ForEach(Pane.sidebar) { p in
+                    Button { nav.go(p) } label: {
                         HStack(spacing: 8) {
                             Image(systemName: p.symbol).frame(width: 18)
                             Text(p.rawValue)
@@ -82,16 +103,15 @@ struct SettingsView: View {
             .background(.ultraThinMaterial)
             Group {
                 switch nav.pane {
+                case .music, .stash, .playlists, .media: MusicPane()
                 case .general: GeneralPane()
                 case .appearance: AppearancePane()
                 case .behavior: BehaviorPane()
                 case .tabs: TabsPane()
                 case .alerts: AlertsPane()
-                case .media: MediaPane()
                 case .timer: TimerPane()
                 case .controls: ControlsPane()
                 case .shortcuts: ShortcutsPane()
-                case .playlists: PlaylistsPane()
                 case .power: PowerPane()
                 case .privacy: PrivacyPane()
                 case .about: AboutPane()
@@ -642,6 +662,10 @@ struct PlaylistsPane: View {
                     if auth.signedIn { Button("Sign out") { auth.signOut(); lists.v = [] } }
                     else { Button("Sign in with Spotify") { auth.signIn() }.disabled(!enabled || clientID.isEmpty) }
                 }
+                if auth.keychainPending {
+                    Text("macOS may be asking to use your Keychain (look for a dialog). Choose “Always Allow”. Notchly keeps working meanwhile.")
+                        .font(.caption).foregroundStyle(.orange)
+                }
                 if !auth.status.isEmpty { Text(auth.status).font(.caption).foregroundStyle(.secondary) }
             }
             if auth.signedIn {
@@ -669,5 +693,28 @@ struct PlaylistsPane: View {
             }
         }
         .onAppear { if auth.signedIn && enabled && lists.v.isEmpty && !Demo.on { loadLists() } }
+    }
+}
+
+/// Everything about music in one place: your Stash, the Spotify playlist setup, and Now Playing options.
+struct MusicPane: View {
+    @ObservedObject var nav = SettingsNav.shared
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("", selection: $nav.musicTab) {
+                ForEach(MusicTab.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden()
+            .frame(maxWidth: 420)
+            .padding(.top, 14).padding(.bottom, 4)
+            Group {
+                switch nav.musicTab {
+                case .stash: StashPane()
+                case .playlists: PlaylistsPane()
+                case .nowPlaying: MediaPane()
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 }

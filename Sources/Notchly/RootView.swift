@@ -301,6 +301,7 @@ struct ExpandedView: View {
         case .stats: StatsTab()
         case .controls: ControlsTab()
         case .weather: WeatherTab()
+        case .stash: StashTab()
         case .apps: AppsTab()
         case .mirror: MirrorTab()
         }

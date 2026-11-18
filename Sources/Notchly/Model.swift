@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 enum NotchTab: String, CaseIterable, Identifiable {
-    case home, tray, clipboard, notes, calendar, reminders, timer, stats, controls, weather, apps, mirror
+    case home, tray, clipboard, notes, calendar, reminders, timer, stats, controls, weather, stash, apps, mirror
     var id: String { rawValue }
     var title: String {
         switch self {
@@ -16,6 +16,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .stats: return "System"
         case .controls: return "Controls"
         case .weather: return "Weather"
+        case .stash: return "Stash"
         case .mirror: return "Mirror"
         case .apps: return "Apps"
         }
@@ -32,6 +33,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .stats: return "cpu"
         case .controls: return "switch.2"
         case .weather: return "cloud.sun.fill"
+        case .stash: return "tray.full.fill"
         case .mirror: return "camera.fill"
         case .apps: return "square.grid.2x2.fill"
         }
@@ -47,7 +49,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         UserDefaults.standard.set(a.map { $0.rawValue }.joined(separator: ","), forKey: "tabOrder")
     }
     static var enabled: [NotchTab] {
-        ordered.filter { $0 == .home || $0.isOn }
+        ordered.filter { $0 == .home || ($0.isOn && ($0 != .stash || P.bool("spotifyEnabled"))) }
     }
     var isOn: Bool { UserDefaults.standard.bool(forKey: "tab_\(rawValue)") }
     var blurb: String {
@@ -62,6 +64,7 @@ enum NotchTab: String, CaseIterable, Identifiable {
         case .stats: return "CPU, memory, disk, battery"
         case .controls: return "Dark mode, mute, keep awake, shortcuts"
         case .weather: return "Opt-in forecast (uses the internet)"
+        case .stash: return "Songs you collected from Spotify (needs Playlists on)"
         case .apps: return "Launch your favourite apps"
         case .mirror: return "Camera mirror"
         }
@@ -179,6 +182,8 @@ final class NotchState: ObservableObject {
     @Published var notchSize = CGSize(width: 185, height: 32)
     @Published var hasNotch = false
     @Published var pinned = false
+    /// The playlist picker is open over the music card (Esc closes it before closing the island).
+    @Published var pickerOpen = false
     /// Shows sample ears for a moment so the Ear width setting is visible with nothing playing.
     @Published var earPreview = false
     @Published var forward = true
@@ -200,6 +205,7 @@ final class NotchState: ObservableObject {
         let a = all.firstIndex(of: tab) ?? 0, b = all.firstIndex(of: t) ?? 0
         forward = b >= a
         blockSwipe = false
+        pickerOpen = false
         withAnimation(Motion.tab) { tab = t }
     }
     private var alertWork: DispatchWorkItem?
@@ -261,6 +267,7 @@ final class NotchState: ObservableObject {
         pinned = false
         blockSwipe = false
         awaitingPointer = false
+        pickerOpen = false
         withAnimation(Motion.close) { expanded = false }
     }
     func toggle() {

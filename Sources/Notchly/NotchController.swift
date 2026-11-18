@@ -31,7 +31,10 @@ final class NotchPanel: NSPanel {
     }
     override var canBecomeMain: Bool { false }
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect { frameRect }
-    override func cancelOperation(_ sender: Any?) { NotchState.shared.close() }
+    override func cancelOperation(_ sender: Any?) {
+        if NotchState.shared.pickerOpen { withAnimation(Motion.close) { NotchState.shared.pickerOpen = false }; return }
+        NotchState.shared.close()
+    }
 
     /// Text fields inside the island (Notes, search, reminders) need ⌘V/⌘C/⌘X/⌘A/⌘Z even though the app is not "active".
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
@@ -218,6 +221,41 @@ final class NotchController {
                 catch let e as SpotifyError { dbg("CREATE ERR \(e.message)") } catch { dbg("CREATE ERR \(error)") }
             }
         }
+        for (name, uri) in [("new1", "spotify:track:NEW1"), ("new2", "spotify:track:NEW2"), ("existing", "spotify:track:EXISTING"),
+                            ("ad", "spotify:ad:xyz"), ("local", "spotify:local:a:b:c:1")] {
+            hook("fake.\(name)") { PlaylistService.testTrack = SpotifyTrack(uri: uri, title: "Song \(name)", artist: "Artist", art: ""); dbg("FAKE \(name)") }
+        }
+        hook("svc.addDefault") {
+            Task { @MainActor in
+                let svc = PlaylistService.shared
+                svc.toast = nil; svc.addToDefault()
+                for _ in 0..<80 { try? await Task.sleep(nanoseconds: 100_000_000); if !svc.busy { break } }
+                dbg("SVC addDefault done toast=\(svc.toast ?? "-")")
+            }
+        }
+        hook("svc.addGone") {
+            Task { @MainActor in
+                let svc = PlaylistService.shared
+                svc.toast = nil; svc.add(to: SPPlaylist(id: "gone", name: "Gone", tracks: 0, imageURL: "", isPublic: false), track: nil)
+                for _ in 0..<80 { try? await Task.sleep(nanoseconds: 100_000_000); if !svc.busy { break } }
+                dbg("SVC addGone done toast=\(svc.toast ?? "-")")
+            }
+        }
+        hook("svc.refresh") {
+            Task { @MainActor in
+                let svc = PlaylistService.shared
+                await svc.refreshCurrent()
+                dbg("SVC refresh current=\(svc.current?.uri ?? "-") inDefault=\(svc.currentInDefault)")
+            }
+        }
+        hook("svc.stash") {
+            Task { @MainActor in
+                PlaylistService.shared.stashCurrent()
+                try? await Task.sleep(nanoseconds: 400_000_000)
+                dbg("SVC stash count=\(StashStore.shared.items.count) toast=\(PlaylistService.shared.toast ?? "-")")
+            }
+        }
+        hook("picker") { NotchState.shared.pickerOpen = true }
         hook("keystate") {
             let w = self.panel
             dbg("KEYSTATE appActive=\(NSApp.isActive) panelKey=\(w?.isKeyWindow ?? false) firstResponder=\(w?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")")

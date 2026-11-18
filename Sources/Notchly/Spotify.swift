@@ -41,20 +41,26 @@ struct SPPlaylist: Identifiable, Hashable {
 }
 
 enum Keychain {
+    /// Test harness (-spotifyAPI override) keeps tokens in memory: no Keychain prompts, nothing real is touched.
+    private static var testMode: Bool { !P.str("spotifyAPI").isEmpty }
+    private static var memory: [String: Data] = [:]
     static var service: String { P.str("spotifyAPI").isEmpty ? "com.sanketh.Notchly.spotify" : "com.sanketh.Notchly.spotify.test" }
     static func set(_ data: Data, _ account: String) {
+        if testMode { memory[account] = data; return }
         delete(account)
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecValueData as String: data]
         SecItemAdd(q as CFDictionary, nil)
     }
     static func get(_ account: String) -> Data? {
+        if testMode { return memory[account] }
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
                                 kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
         var out: AnyObject?
         return SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess ? out as? Data : nil
     }
     static func delete(_ account: String) {
+        if testMode { memory[account] = nil; return }
         let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
         SecItemDelete(q as CFDictionary)
     }
@@ -83,13 +89,25 @@ final class SpotifyAuth: ObservableObject {
 
     // MARK: Start-up
 
+    /// Reading the Keychain can pop up a macOS permission dialog (after every rebuild of an ad-hoc signed app),
+    /// and that call blocks until you answer. So it never runs on the main thread: Notchly always starts.
+    @Published var keychainPending = false
     func start() {
         if Demo.on { signedIn = true; userName = "Demo"; userID = "demo"; return }
-        if let d = Keychain.get("tokens"), let t = try? JSONDecoder().decode(Tokens.self, from: d) {
-            tokens = t
-            signedIn = true
-            userName = UserDefaults.standard.string(forKey: "spotifyUserName") ?? ""
-            userID = UserDefaults.standard.string(forKey: "spotifyUserID") ?? ""
+        guard P.bool("spotifyEnabled") || UserDefaults.standard.string(forKey: "spotifyUserID") != nil else { return }
+        keychainPending = true
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let d = Keychain.get("tokens")
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.keychainPending = false
+                if let d = d, let t = try? JSONDecoder().decode(Tokens.self, from: d) {
+                    self.tokens = t
+                    self.signedIn = true
+                    self.userName = UserDefaults.standard.string(forKey: "spotifyUserName") ?? ""
+                    self.userID = UserDefaults.standard.string(forKey: "spotifyUserID") ?? ""
+                }
+            }
         }
     }
 
@@ -165,7 +183,8 @@ final class SpotifyAuth: ObservableObject {
     }
 
     func signOut() {
-        Keychain.delete("tokens"); tokens = nil
+        tokens = nil
+        DispatchQueue.global(qos: .utility).async { Keychain.delete("tokens") }
         signedIn = false; userName = ""; userID = ""; busy = false; status = "Signed out"
         UserDefaults.standard.removeObject(forKey: "spotifyUserName"); UserDefaults.standard.removeObject(forKey: "spotifyUserID")
     }
@@ -256,6 +275,11 @@ final class SpotifyAPI {
                 throw SpotifyError.http(code, msg)
             }
         }
+    }
+
+    /// For extensions in other files.
+    func callPublic(_ method: String, _ path: String, query: [String: String] = [:], body: [String: Any]? = nil) async throws -> (Int, Any?) {
+        try await call(method, path, query: query, body: body)
     }
 
     func me() async throws -> (id: String, name: String) {

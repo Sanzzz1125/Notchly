@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         ReminderService.shared.start()
         ClipboardStore.shared.start()
         SpotifyAuth.shared.start()
+        PlaylistService.shared.start()
         StatsService.shared.start()
         VolumeMonitor.shared.start()
         DownloadsWatcher.shared.start()

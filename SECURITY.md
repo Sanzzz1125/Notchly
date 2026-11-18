@@ -11,6 +11,8 @@ Please open a private security advisory on GitHub (Security → Report a vulnera
 - Debug aids (`-demoMode`, `-debugHooks`, `-factoryDefaults`) only act on launch arguments or local Darwin notifications and are off unless you pass them.
 - One helper (`bridge/MediaBridge.m`) is compiled on **your** machine at build time and loaded into `/usr/bin/perl` to read Now Playing. It only calls MediaRemote and prints JSON to Notchly.
 
+- **Spotify sign-in** uses OAuth with PKCE (no client secret exists in the app), returns through a `notchly://` link (no local port is opened), keeps the token in the Keychain, and requests only playlist scopes. Reading the Keychain never happens on the main thread, because macOS may show a permission prompt.
+
 ## Things that run code you configure
 - **Custom shortcuts** of type *Shell command* execute `/bin/zsh -c <your text>` as you when you press the tile. Notchly never creates or changes them on its own; they are stored in your user defaults.
 - The Dark Mode / Mute tiles run short AppleScript snippets; Do Not Disturb runs a Shortcut you name.

@@ -56,6 +56,8 @@ made = []
 for f in sorted(glob.glob(os.path.join(SHOTS, "tab-*.png"))):
     n = os.path.basename(f)
     island_card(f, n, seed=len(made)); made.append(n)
+pk = os.path.join(SHOTS, "picker.png")
+if os.path.exists(pk): island_card(pk, "picker.png", seed=1); made.append("picker.png")
 for n in ("closed", "alert"):
     f = os.path.join(SHOTS, n + ".png")
     if os.path.exists(f):

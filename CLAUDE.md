@@ -16,10 +16,14 @@ macOS 14+ SwiftUI/AppKit notch "dynamic island" app. Swift package, built into a
 - `RootView.swift`: compact wings, alerts, expanded header (adaptive: narrow moves pin/gear left) + tab strip.
 - `Home.swift` (Now Playing card, side widgets), `Tabs.swift` (calendar, reminders, clipboard, notes, timer, stats, apps, controls, weather), `Tray.swift`.
 - `Services.swift` (battery via IOKit notification, timer, keep-awake, stats, volume via CoreAudio listener, downloads, tray store), `Data.swift` (calendar/reminders models, clipboard, notes, shortcuts, quick actions, weather, `Demo`), `Media.swift` (MediaRemote via perl bridge + AppleScript fallback, lrclib lyrics, `PlaybackClock`).
-- `Settings.swift`, `Onboarding.swift`, `Brand.swift` (menu bar icon), `Prefs.swift` (defaults `P`, `Background`, `Eco`).
+- `Spotify.swift` (PKCE auth, Keychain, `SpotifyAPI`, `SpotifyTrack`), `Playlists.swift` (`PlaylistService`, `StashStore`), `PlaylistsUI.swift` (bar, picker, Stash manager; used by the notch tab and by Music → Stash in the window).
+- `Settings.swift` (sidebar: Music holds Stash / Playlists / Now Playing via `SettingsNav.musicTab`; `SettingsWindow.show(.stash/.playlists/.media)` deep-links), `Onboarding.swift`, `Brand.swift` (menu bar icon), `Prefs.swift` (defaults `P`, `Background`, `Eco`).
 - `scripts/`: `make-icon.swift`, `screenshots.sh` + `winshot.swift` + `compose.py`, `package.sh`.
 
 ## Rules
+- Keychain reads/writes must never run on the main thread (macOS may show a blocking permission prompt after every ad-hoc rebuild). Test mode (`-spotifyAPI` override) keeps tokens in memory.
+- Spotify features: opt-in, quiet on success (errors only), no duplicates, only talk to Spotify on a click. Test with `python3 scripts/test-spotify.py` (fake server in `scripts/mock-spotify.py`); never write to the user's real account without asking.
+- Never send synthetic key/mouse events to the frontmost app while testing: use `keypid`-style delivery to Notchly only, and move the pointer before clicking.
 - No telemetry. Network only for lyrics/artwork (switchable in Settings → Privacy) and the **opt-in, off-by-default** Open-Meteo weather. Anything new that touches the network needs its own opt-in and a PRIVACY.md/README entry.
 - Idle CPU must stay ~0%: no repeating timers while closed. Prefer notifications/listeners; any timer needs `tolerance` and must respect `Background.paused` and `Eco.on`.
 - Services must not trigger permission prompts at launch; ask from onboarding or an Allow button.

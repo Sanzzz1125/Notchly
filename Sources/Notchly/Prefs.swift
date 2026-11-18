@@ -20,7 +20,7 @@ enum P {
         "clipLimit": 25.0, "remindersAll": false, "sideWidth": 210.0,
         "tab_tray": true, "tab_clipboard": true, "tab_notes": true, "tab_calendar": true,
         "tab_reminders": true, "tab_timer": true, "tab_stats": true, "tab_mirror": true, "tab_apps": true,
-        "tab_controls": true, "tab_weather": false, "weatherEnabled": false, "weatherCity": "", "weatherUnit": 0,
+        "tab_controls": true, "tab_weather": false, "tab_stash": true, "spotifyFakeTrack": "", "weatherEnabled": false, "weatherCity": "", "weatherUnit": 0,
         "focusShortcut": "", "spotifyEnabled": false, "spotifyClientID": "", "spotifyDefaultID": "", "spotifyDefaultName": "", "spotifyAPI": "", "spotifyAccounts": "", "spotifyNoBrowser": false, "gestureDouble": "none", "gestureOption": "none", "ecoCalmMotion": false, "motionSpeed": 1.0, "motionBounce": 0.5, "tabTransition": 0, "onboarded": false, "demoMode": false, "debugHooks": false,
     ]
     static func register() {

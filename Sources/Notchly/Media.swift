@@ -55,7 +55,8 @@ final class MediaController: ObservableObject {
         position = 84; duration = 225; source = "Music"; lyric = "Hold on, we're almost home"
         if mode == "long" { title = "A Very Long Track Title That Keeps Going And Going Forever (Extended Remastered Mix)"; artist = "An Artist With A Rather Long Name feat. Another Long Collaborator"; lyric = "And this lyric line is also extremely long so it must truncate nicely" }
         if mode == "nometa" { title = "Netflix"; artist = ""; lyric = ""; isPlaying = false; source = "Safari"; sourceBundle = "com.apple.Safari" }
-        if mode == "noart" || mode == "long" || mode == "nometa" { return }
+        if mode == "spotify" || mode == "spotifynoart" { source = "Spotify"; sourceBundle = "com.spotify.client" }
+        if mode == "noart" || mode == "long" || mode == "nometa" || mode == "spotifynoart" { return }
         let img = NSImage(size: NSSize(width: 300, height: 300), flipped: false) { r in
             NSGradient(colors: [NSColor(srgbRed: 1, green: 0.62, blue: 0.2, alpha: 1), NSColor(srgbRed: 0.93, green: 0.2, blue: 0.45, alpha: 1), NSColor(srgbRed: 0.25, green: 0.12, blue: 0.5, alpha: 1)])?.draw(in: r, angle: -70)
             NSColor(white: 1, alpha: 0.9).setFill()

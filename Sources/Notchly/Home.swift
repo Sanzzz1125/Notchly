@@ -67,19 +67,47 @@ struct Scrubber: View {
 struct MediaCard: View {
     @ObservedObject var m = MediaController.shared
     @ObservedObject var clock = MediaController.shared.clock
+    @ObservedObject var svc = PlaylistService.shared
+    @ObservedObject var st = NotchState.shared
+    @StateObject private var pickerTrack = Box<SpotifyTrack?>(nil)
+
+    /// The playlist bar only exists while Spotify is the playing app, and only if you turned the feature on.
+    private func showBar(_ width: CGFloat) -> Bool {
+        m.hasTrack && m.sourceBundle == "com.spotify.client" && svc.featureOn && width >= 360
+    }
 
     var body: some View {
         GeometryReader { g in
             let art = max(60, min(200, g.size.height - 2 * DS.Space.m))
             let compact = g.size.height < 138
+            let bar = showBar(g.size.width)
             HStack(spacing: DS.Space.m + 2) {
                 artwork(art)
                 if m.hasTrack { info(compact, g.size.width - art - 2 * DS.Space.m - 14) } else { idle }
+                if bar {
+                    Rectangle().fill(Color.white.opacity(0.08)).frame(width: 1).padding(.vertical, 6)
+                    SpotifyBar(compact: compact)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
+                }
             }
             .padding(DS.Space.m)
             .frame(width: g.size.width, height: g.size.height)
+            .animation(Motion.open, value: bar)
         }
         .card()
+        .overlay {
+            if st.pickerOpen {
+                PlaylistPicker(track: pickerTrack.v) { withAnimation(Motion.close) { st.pickerOpen = false } }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .overlay(alignment: .bottom) { PlaylistToast() }
+        .clipShape(RoundedRectangle(cornerRadius: DS.Radius.l, style: .continuous))
+        .onChange(of: st.pickerOpen) { _, open in
+            guard open else { return }
+            pickerTrack.v = nil
+            Task { pickerTrack.v = await svc.captureTrack() }     // the song you saw when you opened the picker
+        }
     }
 
     func artwork(_ art: CGFloat) -> some View {

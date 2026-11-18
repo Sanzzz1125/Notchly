@@ -680,6 +680,7 @@ enum NotchGesture {
         var out = [Choice(id: "none", title: "Nothing")]
         out += ShortcutStore.shared.items.map { Choice(id: "shortcut:\($0.id.uuidString)", title: "Shortcut: \($0.name)") }
         out += QuickAction.allCases.map { Choice(id: "quick:\($0.rawValue)", title: "Toggle: \($0.title)") }
+        out += [Choice(id: "spotify:add", title: "Spotify: add song to default playlist"), Choice(id: "spotify:stash", title: "Spotify: send song to Stash")]
         out += [Choice(id: "media:playpause", title: "Play / Pause music"), Choice(id: "media:next", title: "Next track"), Choice(id: "media:previous", title: "Previous track")]
         out += NotchTab.allCases.map { Choice(id: "tab:\($0.rawValue)", title: "Open tab: \($0.title)") }
         out += [Choice(id: "pause", title: "Pause / resume Notchly")]
@@ -701,6 +702,8 @@ enum NotchGesture {
             if c == "playpause" { m.playPause() } else if c == "next" { m.next() } else { m.previous() }
         case ("tab", let raw):
             if let t = NotchTab(rawValue: raw) { if st.expanded { st.go(t) } else { st.open(t) } }
+        case ("spotify", let c):
+            Task { @MainActor in if c == "add" { PlaylistService.shared.addToDefault() } else { PlaylistService.shared.stashCurrent() } }
         case ("pause", _):
             NotchController.shared.setPaused(!Background.user)
         default: break

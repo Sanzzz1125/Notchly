@@ -18,6 +18,7 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 | | |
 |---|---|
 | **Now Playing from any app** | Spotify, Apple Music, YouTube in a browser, VLC… artwork, scrubber, controls and synced lyrics. Music "ears" when the notch is closed. |
+| **Spotify playlists** *(opt-in)* | A bar on the music card, only while Spotify plays: **＋** adds the song to your default playlist, **▾** picks any other playlist, and the **tray** button sends songs to a **Stash** you can review, select, delete and turn into a new playlist. |
 | **Tray / Shelf** | Drop files on the notch, select several, drag them out anywhere together, or AirDrop them. |
 | **Clipboard history** | Search, pin snippets you reuse, one click to copy. Password-manager items are skipped. |
 | **Notes** | Multiple quick notes that save as you type. |
@@ -55,6 +56,17 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 
 <table>
 <tr>
+<td><img src="docs/picker.png" alt="Choosing a playlist for the current Spotify song"></td>
+<td><img src="docs/tab-stash.png" alt="Stash tab: songs collected from Spotify"></td>
+</tr>
+<tr>
+<td><img src="docs/settings-stash.png" alt="The Music section of the Notchly window: Stash manager"></td>
+<td><img src="docs/settings-playlists.png" alt="Music → Playlists: Spotify setup"></td>
+</tr>
+</table>
+
+<table>
+<tr>
 <td><img src="docs/onboarding-1.png" alt="First-run tour explaining each permission"></td>
 <td><img src="docs/settings-appearance.png" alt="Settings: themes, accent, size and shape"></td>
 </tr>
@@ -63,6 +75,23 @@ Your notch is the most valuable, most wasted pixel real estate on a MacBook. Not
 <td align="center"><sub>Settings: themes, sizes, tabs, shortcuts, privacy</sub></td>
 </tr>
 </table>
+
+## Spotify playlists (optional)
+While Spotify is playing, a slim bar appears on the right of the music card:
+
+| Button | Does |
+|---|---|
+| **＋** | Adds the song to your default playlist. No popup: it just turns into a ✓, and a song that is already there is never added twice. |
+| **▾** | Opens a list of your playlists (default first, then recents, with search, "make default" and "New playlist…") and adds the song to the one you pick. |
+| **Tray** | Sends the song to your **Stash** (badge = how many). Open the Stash from its tab in the notch, or from **Music → Stash** in the Notchly window to select songs, delete them (with Undo), make a **new playlist** from them, or add them to an existing one. |
+
+**One-time setup (about 3 minutes).** Spotify only lets registered apps edit playlists, so you register a free app of your own:
+1. Open the [Spotify developer dashboard](https://developer.spotify.com/dashboard) and log in with your **Premium** account.
+2. **Create app** (any name), tick **Web API**, and add the Redirect URI `notchly://callback`.
+3. Copy the app's **Client ID**.
+4. In Notchly: **Settings → Music → Playlists**, turn it on, paste the Client ID, press **Sign in with Spotify**.
+
+Notes: since February 2026 Spotify requires Premium on the account that owns a development-mode app, and allows one app per developer and up to 5 users, which is plenty for personal use. The Client ID is a public label, not a secret; Notchly never needs your Client Secret. The sign-in token is kept in your macOS Keychain (macOS may ask permission after you rebuild the app; choose *Always Allow*). The feature is **off by default** and does nothing in the background: it only contacts Spotify when you click.
 
 ## Using it
 | Do this | To |
@@ -105,11 +134,12 @@ On first launch a short tour explains each permission. Everything is optional.
   | Lyrics | `lrclib.net` | track title / artist / album | on, switchable |
   | Artwork (Spotify) | the image URL Spotify provides | a normal image request | on, switchable |
   | Weather | `open-meteo.com` | the city you typed, then its coordinates | **off** |
+  | Spotify playlists | `accounts.spotify.com`, `api.spotify.com` | your sign-in token, playlist IDs, song IDs (only when you press a button) | **off** |
 
   One switch (Settings → Privacy → *Allow internet access*) turns all of it off. `grep -rn URLSession Sources/` shows every call.
 - 🧱 **Auditable.** About 4.5k lines of Swift. Build it yourself.
 - 🛑 **Permissions on demand.** Calendar, Reminders and Camera (Mirror only) are asked for *only* when you press Allow. Notchly never needs Accessibility, Full Disk Access or Screen Recording.
-- 📋 **Clipboard history is in memory** and gone when you quit. Only snippets *you pin* are saved on your Mac.
+- 📋 **Clipboard history is in memory** and gone when you quit. Only snippets *you pin* are saved on your Mac, plus your Stash of Spotify songs (a small file in `~/Library/Application Support/Notchly`).
 - ⚠️ **Honest limits:** ad-hoc signed and not sandboxed; Now Playing uses a private Apple framework (MediaRemote) that Apple may change; custom *shell command* shortcuts run with your permissions, so only add commands you understand. Details in [SECURITY.md](SECURITY.md).
 
 ## Battery & performance
@@ -124,6 +154,7 @@ Notchly is event-driven: **no polling timer while the notch is closed.** Measure
 ./scripts/screenshots.sh         # re-record docs/ from the running app (sample data, factory settings)
 swift scripts/make-icon.swift    # regenerate the app icon (png + icns)
 ./scripts/package.sh             # zip for sharing
+python3 scripts/test-spotify.py  # 30 end-to-end checks of the Spotify features against a fake Spotify
 ```
 Launch arguments (never saved): `-demoMode YES` sample data, `-factoryDefaults YES` ignore saved settings, `-debugHooks YES` lets scripts open tabs via `notifyutil -p notchly.debug.open.<tab>`. Code map and rules for contributors are in [CLAUDE.md](CLAUDE.md).
 

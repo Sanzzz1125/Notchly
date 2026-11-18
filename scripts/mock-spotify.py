@@ -4,7 +4,7 @@ Dev tool only: python3 scripts/mock-spotify.py [port]. Control endpoints start w
 import base64, hashlib, json, sys, threading, time, urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-S = {"challenge": None, "access": None, "refresh": "R1", "ttl": 3600, "adds": [], "created": [], "rl_hits": 0, "tokens_issued": 0, "refreshes": 0}
+S = {"contents": {"p1": ["spotify:track:EXISTING"]}, "challenge": None, "access": None, "refresh": "R1", "ttl": 3600, "adds": [], "created": [], "rl_hits": 0, "tokens_issued": 0, "refreshes": 0}
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
 ME = {"id": "u1", "display_name": "Mock Listener"}
 
@@ -45,6 +45,12 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/_revoke": S["refresh"] = None; S["access"] = "EXPIRED"; return self.send(200)
         if not self.authed(): return self.send(401, {"error": {"status": 401, "message": "The access token expired"}})
         if u.path == "/v1/me": return self.send(200, ME)
+        parts = u.path.strip("/").split("/")
+        if len(parts) == 4 and parts[1] == "playlists" and parts[3] == "items":     # contents (new "item" shape, plus an old "track" one)
+            c = S["contents"].get(parts[2], []); off, lim = int(q.get("offset", 0)), int(q.get("limit", 100))
+            page = c[off:off + lim]
+            items = [({"item": {"uri": x}} if i % 2 == 0 else {"track": {"uri": x}}) for i, x in enumerate(page)]
+            return self.send(200, {"items": items, "next": "more" if off + lim < len(c) else None})
         if u.path == "/v1/me/playlists":
             off, lim = int(q.get("offset", 0)), int(q.get("limit", 20))
             page = PL[off:off + lim]
@@ -75,7 +81,7 @@ class H(BaseHTTPRequestHandler):
             if pid == "ratelimit":
                 S["rl_hits"] += 1
                 if S["rl_hits"] == 1: return self.send(429, {"error": {"status": 429, "message": "slow down"}}, {"Retry-After": "1"})
-            S["adds"].append((pid, uris)); return self.send(201, {"snapshot_id": "s"})
+            S["adds"].append((pid, uris)); S["contents"].setdefault(pid, []).extend(uris); return self.send(201, {"snapshot_id": "s"})
         if u.path in ("/v1/me/playlists", "/v1/users/u1/playlists"):
             d = json.loads(raw); pid = f"new{len(S['created'])+1}"; S["created"].append({"id": pid, "name": d.get("name"), "public": d.get("public")})
             return self.send(201, {"id": pid, "name": d.get("name")})
