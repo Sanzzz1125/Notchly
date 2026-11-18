@@ -4,7 +4,8 @@ Run: ./build.sh && python3 scripts/test-spotify.py     (stdlib only; needs notif
 import json, os, re, subprocess, sys, time, urllib.parse, urllib.request
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-BIN = os.path.join(ROOT, "build/Notchly.app/Contents/MacOS/Notchly")
+BIN = os.path.join(ROOT, "build/NotchlyTest.app/Contents/MacOS/Notchly")   # isolated copy, see scripts/make-test-app.sh
+CB = os.path.join(ROOT, "build", "spotify-callback.txt")
 PORT = 8765
 MOCK = f"http://127.0.0.1:{PORT}"
 LOG = os.path.join(ROOT, "build", "spotify-test.log")
@@ -13,6 +14,11 @@ results = []
 def check(name, ok, detail=""):
     results.append(ok); print(("PASS  " if ok else "FAIL  ") + name + (f"   [{detail}]" if detail and not ok else ""))
 
+def deliver(url):
+    open(CB, "w").write(url); post("callback")
+def real_settings():
+    out = subprocess.run(["defaults", "export", "com.sanketh.Notchly", "-"], capture_output=True).stdout
+    return out
 def post(name): subprocess.run(["notifyutil", "-p", f"notchly.debug.spotify.{name}"], check=True)
 def log(): return open(LOG).read() if os.path.exists(LOG) else ""
 def get(path): return json.load(urllib.request.urlopen(MOCK + path))
@@ -26,11 +32,13 @@ def wait_for(pattern, since, timeout=8):
 def run(hook, pattern, timeout=8):
     n = len(log()); post(hook); m = wait_for(pattern, n, timeout); return m.group(0) if m else "(no output)"
 
+subprocess.run([os.path.join(ROOT, "scripts/make-test-app.sh")], check=True, stdout=subprocess.DEVNULL)
+REAL_BEFORE = real_settings()
 subprocess.run(["pkill", "-x", "Notchly"]); time.sleep(0.5)
 mock = subprocess.Popen([sys.executable, os.path.join(ROOT, "scripts/mock-spotify.py"), str(PORT)]); time.sleep(0.8)
 open(LOG, "w").close()
 app = subprocess.Popen([BIN, "-factoryDefaults", "YES", "-onboarded", "YES", "-debugHooks", "YES", "-spotifyEnabled", "YES", "-allowNetwork", "YES",
-                        "-spotifyClientID", "MOCKCLIENT", "-spotifyDefaultID", "p1", "-spotifyDefaultName", "Movzzzzzz", "-spotifyAPI", MOCK + "/v1", "-spotifyAccounts", MOCK, "-spotifyNoBrowser", "YES", "-demoMode", "NO"],
+                        "-spotifyClientID", "MOCKCLIENT", "-spotifyDefaultID", "p1", "-spotifyDefaultName", "Movzzzzzz", "-spotifyAPI", MOCK + "/v1", "-spotifyAccounts", MOCK, "-spotifyNoBrowser", "YES", "-demoMode", "NO", "-testCallbackFile", CB],
                        stdout=open(LOG, "w"), stderr=subprocess.DEVNULL)
 for _ in range(60):                       # wait until the app answers (first launch after a build can be slow)
     post("status"); time.sleep(0.25)
@@ -39,7 +47,7 @@ try:
     check("PKCE challenge matches the RFC 7636 test vector", "OK" in run("pkce", r"PKCE.*"))
 
     # --- sign-in edge cases before a real sign-in
-    subprocess.run(["open", "notchly://callback?code=x&state=forged"]); time.sleep(1.0)
+    deliver("notchly://callback?code=x&state=forged"); time.sleep(1.0)
     r = run("status", r"STATUS.*")
     check("forged callback (wrong state) is rejected", "signedIn=false" in r and "unexpected" in r, r)
 
@@ -48,14 +56,14 @@ try:
     q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(m.group(1)).query)) if m else {}
     check("authorize URL asks for playlist scopes and the notchly:// redirect",
           q.get("redirect_uri") == "notchly://callback" and "playlist-modify-private" in q.get("scope", "") and q.get("client_id") == "MOCKCLIENT")
-    subprocess.run(["open", "notchly://callback?error=access_denied&state=" + q.get("state", "")]); time.sleep(1.0)
+    deliver("notchly://callback?error=access_denied&state=" + q.get("state", "")); time.sleep(1.0)
     check("user pressing Cancel in Spotify is handled", "cancelled" in run("status", r"STATUS.*").lower())
 
     # --- real sign-in
     n = len(log()); post("signin"); m = wait_for(r"SPOTIFY_AUTH_URL (\S+)", n)
     q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(m.group(1)).query))
     urllib.request.urlopen(MOCK + "/_challenge?c=" + urllib.parse.quote(q["code_challenge"]))
-    subprocess.run(["open", "notchly://callback?code=MOCKCODE&state=" + q["state"]]); time.sleep(1.5)
+    deliver("notchly://callback?code=MOCKCODE&state=" + q["state"]); time.sleep(1.5)
     st = run("status", r"STATUS.*")
     check("token exchange with PKCE verifier succeeds and user is shown", "signedIn=true" in st and "Mock Listener" in st, st)
 
@@ -86,7 +94,7 @@ try:
     n = len(log()); post("signin"); m = wait_for(r"SPOTIFY_AUTH_URL (\S+)", n)
     q = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(m.group(1)).query))
     urllib.request.urlopen(MOCK + "/_challenge?c=" + urllib.parse.quote(q["code_challenge"]))
-    subprocess.run(["open", "notchly://callback?code=MOCKCODE&state=" + q["state"]]); time.sleep(1.5)
+    deliver("notchly://callback?code=MOCKCODE&state=" + q["state"]); time.sleep(1.5)
     def adds(): return [a for a in get("/_state")["adds"] if a[0] == "p1" and a[1] == ["spotify:track:NEW1"] or a[0] == "p1" and a[1] == ["spotify:track:NEW2"]]
     run("fake.new1", r"FAKE.*")
     r = run("svc.refresh", r"SVC refresh.*")
@@ -102,9 +110,9 @@ try:
     check("a song already in the playlist on Spotify is not added again", len([a for a in get("/_state")["adds"] if "EXISTING" in str(a)]) == 0)
     n_before = len(get("/_state")["adds"])
     run("fake.ad", r"FAKE.*"); r = run("svc.addDefault", r"SVC addDefault.*")
-    check("an ad can't be added: clear message, no request", "Nothing to add" in r and len(get("/_state")["adds"]) == n_before, r)
+    check("an ad can't be added: clear message, no request", "Can't add" in r and len(get("/_state")["adds"]) == n_before, r)
     run("fake.local", r"FAKE.*"); r = run("svc.addDefault", r"SVC addDefault.*")
-    check("a local file can't be added: clear message, no request", "Nothing to add" in r and len(get("/_state")["adds"]) == n_before, r)
+    check("a local file can't be added: clear message, no request", "Can't add" in r and len(get("/_state")["adds"]) == n_before, r)
     run("fake.new2", r"FAKE.*"); r = run("svc.addGone", r"SVC addGone.*")
     check("adding to a deleted playlist shows 'Playlist not found'", "Playlist not found" in r, r)
     r = run("svc.stash", r"SVC stash.*")
@@ -117,5 +125,6 @@ try:
 finally:
     app.terminate(); mock.terminate()
     subprocess.run(["pkill", "-x", "Notchly"])
+check("your real Notchly settings were not touched by the test", real_settings() == REAL_BEFORE)
 print(f"\n{sum(results)}/{len(results)} checks passed")
 sys.exit(0 if all(results) else 1)

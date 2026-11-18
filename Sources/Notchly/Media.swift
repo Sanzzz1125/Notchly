@@ -332,6 +332,21 @@ final class MediaController: ObservableObject {
         return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Like `osa`, but keeps the error text and exit status (for precise messages and diagnostics).
+    static func osaDetailed(_ script: String) -> (out: String, err: String, status: Int32) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        p.arguments = ["-e", script]
+        let o = Pipe(), e = Pipe()
+        p.standardOutput = o; p.standardError = e
+        do { try p.run() } catch { return ("", "could not start osascript", -1) }
+        let od = o.fileHandleForReading.readDataToEndOfFile()
+        let ed = e.fileHandleForReading.readDataToEndOfFile()
+        p.waitUntilExit()
+        return (String(data: od, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
+                String(data: ed, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "", p.terminationStatus)
+    }
+
     static func query(_ app: String) -> Info? {
         let artExpr = app == "Spotify" ? "(artwork url of current track)" : "\"\""
         let durExpr = "((duration of current track) as string)"

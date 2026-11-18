@@ -118,10 +118,18 @@ final class PlaylistService: ObservableObject {
 
     // MARK: Current song
 
+    /// Why the last capture failed (shown instead of a vague message).
+    var lastProblem = ""
+
     func captureTrack() async -> SpotifyTrack? {
+        lastProblem = ""
         if Demo.on { return SpotifyTrack(uri: "spotify:track:DEMOCURRENT", title: MediaController.shared.title, artist: MediaController.shared.artist, art: "") }
         if let t = PlaylistService.testTrack { return t }          // test harness only (scripts/test-spotify.py)
-        return await Task.detached { SpotifyTrack.current() }.value
+        let r = await Task.detached { SpotifyTrack.read() }.value
+        switch r {
+        case .success(let t): return t
+        case .failure(let p): lastProblem = p.message; return nil
+        }
     }
 
     func refreshCurrent() async {
@@ -148,9 +156,18 @@ final class PlaylistService: ObservableObject {
         do {
             playlists = try await SpotifyAPI.shared.playlists()
             loadedAt = Date()
+            // A default that isn't one of your playlists (deleted, or not yours) is dropped and chosen again.
+            if !defaultID.isEmpty && !playlists.contains(where: { $0.id == defaultID }) {
+                UserDefaults.standard.removeObject(forKey: "spotifyDefaultID"); UserDefaults.standard.removeObject(forKey: "spotifyDefaultName")
+            }
             if defaultID.isEmpty, let m = playlists.first(where: { $0.name.lowercased().hasPrefix("movzzz") }) {
                 UserDefaults.standard.set(m.id, forKey: "spotifyDefaultID"); UserDefaults.standard.set(m.name, forKey: "spotifyDefaultName")
+            } else if let d = playlists.first(where: { $0.id == defaultID }), d.name != P.str("spotifyDefaultName") {
+                UserDefaults.standard.set(d.name, forKey: "spotifyDefaultName")      // renamed in Spotify
             }
+            let ids = Set(playlists.map { $0.id })
+            UserDefaults.standard.set(recent.filter { ids.contains($0) }, forKey: "spotifyRecent")
+            objectWillChange.send()
         } catch let e as SpotifyError { show(e.message) } catch { show("Couldn't load playlists") }
     }
 
@@ -168,8 +185,18 @@ final class PlaylistService: ObservableObject {
 
     // MARK: Adding
 
+    private var defaultChecked = false
     func addToDefault() {
         guard available, !busy else { return }
+        if !defaultChecked && !Demo.on {
+            Task {
+                await loadPlaylists(force: true)        // also repairs a stale default
+                defaultChecked = !playlists.isEmpty
+                guard !defaultID.isEmpty else { show("Choose a default playlist in Settings → Music → Playlists"); return }
+                add(to: SPPlaylist(id: defaultID, name: defaultName, tracks: 0, imageURL: "", isPublic: false), track: nil)
+            }
+            return
+        }
         if defaultID.isEmpty {
             Task {
                 await loadPlaylists(force: true)
@@ -190,7 +217,7 @@ final class PlaylistService: ObservableObject {
             var found = track
             if found == nil { found = await captureTrack() }
             guard let t = found, t.isAddable else {
-                show("Nothing to add: play a normal song in Spotify first (ads and local files can't be added)"); return
+                show(lastProblem.isEmpty ? "Can't add this one (an ad, a local file or a podcast)" : lastProblem); return
             }
             await ensureKnown(p.id)
             if known[p.id]?.uris.contains(t.uri) == true { updateInDefault(); return }     // already there: silently skip
@@ -200,13 +227,20 @@ final class PlaylistService: ObservableObject {
                 k.uris.insert(t.uri); known[p.id] = k
                 if current?.uri == t.uri { updateInDefault() }
                 touchRecent(p.id)
+            } catch SpotifyError.http(let code, _) where (code == 404 || code == 400) && p.id == defaultID {
+                // The default playlist is gone or invalid: forget it, look again, tell the user plainly.
+                UserDefaults.standard.removeObject(forKey: "spotifyDefaultID"); UserDefaults.standard.removeObject(forKey: "spotifyDefaultName")
+                defaultChecked = false
+                await loadPlaylists(force: true)
+                show(defaultID.isEmpty ? "Your default playlist no longer exists. Choose one in Settings → Music → Playlists"
+                                       : "Default playlist was out of date; now using “\(defaultName)”. Press ＋ again")
             } catch let e as SpotifyError { show(e.message) } catch { show("Couldn't add the song") }
         }
     }
 
     func stashCurrent() {
         Task {
-            guard let t = await captureTrack(), t.isAddable else { show("Nothing to stash: play a normal song in Spotify first"); return }
+            guard let t = await captureTrack(), t.isAddable else { show(lastProblem.isEmpty ? "Can't stash this one (an ad, a local file or a podcast)" : lastProblem); return }
             StashStore.shared.add(t)
         }
     }
@@ -219,7 +253,7 @@ final class PlaylistService: ObservableObject {
             defer { busy = false }
             var found = track
             if found == nil { found = await captureTrack() }
-            guard let t = found, t.isAddable else { show("Nothing to add: play a normal song first"); return }
+            guard let t = found, t.isAddable else { show(lastProblem.isEmpty ? "Can't add this one (an ad, a local file or a podcast)" : lastProblem); return }
             do {
                 let p: SPPlaylist
                 if Demo.on { p = SPPlaylist(id: "demonew", name: name, tracks: 1, imageURL: "", isPublic: false) }

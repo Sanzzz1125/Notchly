@@ -256,6 +256,36 @@ final class NotchController {
             }
         }
         hook("picker") { NotchState.shared.pickerOpen = true }
+        hook("callback") {      // test copy has no notchly:// scheme: the harness hands the callback URL over in a file
+            let f = P.str("testCallbackFile")
+            if !f.isEmpty, let t = try? String(contentsOfFile: f, encoding: .utf8), let u = URL(string: t.trimmingCharacters(in: .whitespacesAndNewlines)) {
+                SpotifyAuth.shared.handle(u)
+            }
+        }
+        hook("diag") {
+            Task { @MainActor in
+                let a = SpotifyAuth.shared, svc = PlaylistService.shared
+                dbg("DIAG enabled=\(a.enabled) signedIn=\(a.signedIn) keychainPending=\(a.keychainPending) user=\(a.userName) status=\(a.status)")
+                dbg("DIAG default id=\(P.str("spotifyDefaultID")) name=\(P.str("spotifyDefaultName"))")
+                let r = await Task.detached { SpotifyTrack.read() }.value
+                switch r {
+                case .success(let t): dbg("DIAG track OK uri=\(t.uri) title=\(t.title) artist=\(t.artist) addable=\(t.isAddable)")
+                case .failure(let p): dbg("DIAG track FAIL \(p.message)")
+                }
+                do {
+                    let l = try await SpotifyAPI.shared.playlists()
+                    dbg("DIAG playlists OK count=\(l.count) names=\(l.prefix(12).map { $0.name }.joined(separator: " | "))")
+                    let id = P.str("spotifyDefaultID")
+                    dbg("DIAG default present in list=\(l.contains { $0.id == id })")
+                    if !id.isEmpty {
+                        do { let u = try await SpotifyAPI.shared.trackURIs(in: id); dbg("DIAG default contents OK count=\(u.count)") }
+                        catch let e as SpotifyError { dbg("DIAG default contents FAIL \(e.message)") }
+                    }
+                } catch let e as SpotifyError { dbg("DIAG playlists FAIL \(e.message)") } catch { dbg("DIAG playlists FAIL \(error)") }
+                _ = svc
+                dbg("DIAG done")
+            }
+        }
         hook("keystate") {
             let w = self.panel
             dbg("KEYSTATE appActive=\(NSApp.isActive) panelKey=\(w?.isKeyWindow ?? false) firstResponder=\(w?.firstResponder.map { String(describing: type(of: $0)) } ?? "nil")")

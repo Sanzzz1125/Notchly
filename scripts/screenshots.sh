@@ -7,8 +7,9 @@
 # Usage: ./build.sh && ./scripts/screenshots.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-BIN="build/Notchly.app/Contents/MacOS/Notchly"
-[ -x "$BIN" ] || { echo "Build first: ./build.sh"; exit 1; }
+[ -x build/Notchly.app/Contents/MacOS/Notchly ] || { echo "Build first: ./build.sh"; exit 1; }
+./scripts/make-test-app.sh >/dev/null       # isolated copy: own settings, can never touch the real app
+BIN="build/NotchlyTest.app/Contents/MacOS/Notchly"
 OUT="build/shots"; rm -rf "$OUT"; mkdir -p "$OUT" docs
 swiftc -O scripts/winshot.swift -o build/winshot 2>/dev/null
 

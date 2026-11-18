@@ -165,6 +165,7 @@ final class SpotifyAuth: ObservableObject {
                                                   "client_id": clientID, "code_verifier": verifier])
             try store(r, keepRefresh: nil)
             verifier = ""
+            SpotifyAPI.shared.resetUser()
             let me = try await SpotifyAPI.shared.me()
             await MainActor.run {
                 userName = me.name; userID = me.id
@@ -288,11 +289,25 @@ final class SpotifyAPI {
         return (id, (d["display_name"] as? String) ?? id)
     }
 
+    private var verifiedUser = false
+    /// Who is signed in, checked once per session (never trust a cached id: it decides which playlists are yours).
+    func ensureUser() async throws -> String {
+        if verifiedUser && !auth.userID.isEmpty { return auth.userID }
+        let me = try await me()
+        await MainActor.run {
+            auth.userID = me.id; auth.userName = me.name
+            UserDefaults.standard.set(me.id, forKey: "spotifyUserID"); UserDefaults.standard.set(me.name, forKey: "spotifyUserName")
+        }
+        verifiedUser = true
+        return me.id
+    }
+    func resetUser() { verifiedUser = false }
+
     /// Playlists you can add to (ones you own or collaborate on).
     func playlists() async throws -> [SPPlaylist] {
         var out: [SPPlaylist] = []
         var offset = 0
-        let myID = auth.userID
+        let myID = try await ensureUser()
         while offset < 1000 {
             let (_, j) = try await call("GET", "/me/playlists", query: ["limit": "50", "offset": String(offset)])
             guard let d = j as? [String: Any], let items = d["items"] as? [[String: Any]] else { throw SpotifyError.badResponse }
@@ -341,17 +356,39 @@ struct SpotifyTrack: Equatable, Hashable {
     var art: String
     var isAddable: Bool { uri.hasPrefix("spotify:track:") || uri.hasPrefix("spotify:episode:") }
 
-    static func current() -> SpotifyTrack? {
-        guard NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.spotify.client" }) else { return nil }
+    enum Problem: Error {
+        case notRunning, stopped, notAllowed, other(String)
+        var message: String {
+            switch self {
+            case .notRunning: return "Spotify isn't open"
+            case .stopped: return "Nothing is playing in Spotify"
+            case .notAllowed: return "Allow Notchly to control Spotify: System Settings → Privacy & Security → Automation → Notchly → Spotify"
+            case .other(let m): return "Couldn't read the song from Spotify (\(m))"
+            }
+        }
+    }
+
+    static func read() -> Result<SpotifyTrack, Problem> {
+        guard NSWorkspace.shared.runningApplications.contains(where: { $0.bundleIdentifier == "com.spotify.client" }) else { return .failure(.notRunning) }
         let script = """
         tell application "Spotify"
-        if player state is stopped then return ""
+        if player state is stopped then return "STOPPED"
         return (spotify url of current track) & "||" & (name of current track) & "||" & (artist of current track) & "||" & (artwork url of current track)
         end tell
         """
-        guard let out = MediaController.osa(script), !out.isEmpty else { return nil }
-        let p = out.components(separatedBy: "||")
-        guard p.count >= 4 else { return nil }
-        return SpotifyTrack(uri: p[0], title: p[1], artist: p[2], art: p[3])
+        let r = MediaController.osaDetailed(script)
+        if r.status != 0 {
+            if r.err.contains("-1743") || r.err.lowercased().contains("not authorized") { return .failure(.notAllowed) }
+            return .failure(.other(String(r.err.prefix(120))))
+        }
+        if r.out == "STOPPED" || r.out.isEmpty { return .failure(.stopped) }
+        let p = r.out.components(separatedBy: "||")
+        guard p.count >= 4 else { return .failure(.other("unexpected answer: \(r.out.prefix(80))")) }
+        return .success(SpotifyTrack(uri: p[0], title: p[1], artist: p[2], art: p[3]))
+    }
+
+    static func current() -> SpotifyTrack? {
+        if case .success(let t) = read() { return t }
+        return nil
     }
 }
